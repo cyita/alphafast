@@ -26,6 +26,10 @@
 #   --keep-fasta      Keep raw FASTA files after conversion (--from-source only)
 #   --no-keep-fasta   Remove raw FASTA files after conversion (--from-source only)
 #
+# Environment:
+#   HF_ENDPOINT       HuggingFace-compatible endpoint for pre-built downloads,
+#                     e.g. https://hf-mirror.com.
+#
 # Requirements (default / HuggingFace mode):
 #   - hf CLI (HuggingFace): curl -LsSf https://hf.co/cli/install.sh | bash -s
 #   - zstd, tar in PATH (for mmCIF extraction)
@@ -86,6 +90,10 @@ usage() {
   echo "                       Requires wget, zstd, tar, mmseqs in PATH."
   echo "  --keep-fasta         Keep raw FASTA files after conversion (default, --from-source only)"
   echo "  --no-keep-fasta      Remove raw FASTA files after conversion (--from-source only)"
+  echo ""
+  echo "Environment:"
+  echo "  HF_ENDPOINT          HuggingFace-compatible endpoint for pre-built downloads"
+  echo "                       (for example: https://hf-mirror.com)."
   exit "$exit_code"
 }
 
@@ -204,6 +212,7 @@ if [ "$FROM_PREBUILT" = true ]; then
     echo "AlphaFast Database Setup (from HuggingFace)"
     echo "=========================================="
     echo "Repository: ${HF_REPO}"
+    echo "Endpoint: ${HF_ENDPOINT:-https://huggingface.co}"
     echo "Target directory: $TARGET_DIR"
     echo "Start time: $(date)"
     echo "=========================================="

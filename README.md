@@ -50,6 +50,9 @@ Downloads AlphaFast databases. By default this installs pre-built protein MMseqs
 # Default: protein + RNA MMseqs + mmCIF from HuggingFace
 ./scripts/setup_databases.sh /path/to/databases
 
+# Alternative HuggingFace-compatible endpoint
+HF_ENDPOINT=https://hf-mirror.com ./scripts/setup_databases.sh /path/to/databases
+
 # Add RNA FASTA fallback files for forced nhmmer runs
 ./scripts/setup_databases.sh /path/to/databases --include-nhmmer
 
@@ -62,6 +65,8 @@ Downloads AlphaFast databases. By default this installs pre-built protein MMseqs
 # Build from Google-hosted source data instead of using pre-built artifacts
 ./scripts/setup_databases.sh /path/to/databases --from-source
 ```
+
+Because `setup_databases.sh` uses the HuggingFace CLI, setting `HF_ENDPOINT` redirects the pre-built download to an alternative HuggingFace-compatible endpoint. The `--from-source` path instead downloads raw data from Google Cloud Storage and rebuilds the MMseqs databases locally.
 
 **Alternatively**, download pre-built databases from HuggingFace (no padded conversion necessary):
 
@@ -200,6 +205,9 @@ At large batch sizes, every GPU is 100% utilized in each phase, achieving near-l
 ```bash
 # Submit as SLURM job (CPU node, no GPU needed)
 sbatch scripts/setup_databases.sbatch /path/to/databases
+
+# Alternative HuggingFace-compatible endpoint
+HF_ENDPOINT=https://hf-mirror.com sbatch scripts/setup_databases.sbatch /path/to/databases
 
 # Or run directly in an interactive session:
 ./scripts/setup_databases.sh /path/to/databases
