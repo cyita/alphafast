@@ -49,9 +49,9 @@ The Modal deployment uses an alternative **producer-consumer** architecture via 
 
 ## Batch Size Tuning
 
-The `--batch_size` flag controls how many input JSON files are processed together in a single MMseqs2 GPU search. All protein sequences from a batch are collected into a single MMseqs2 query database, which is significantly more efficient than sequential processing.
+The `--batch_size` flag controls how many unique protein sequences are processed together in a single MMseqs2 GPU search. Protein chains are collected and deduplicated across the loaded input JSON files, then split into MMseqs2 query batches of up to `--batch_size` unique sequences. This also batches multiple protein chains from a single JSON file.
 
-When using `run_alphafast.sh`, the batch size defaults to the number of input JSON files in `--input_dir`. For manual runs:
+When using `run_alphafast.sh`, the batch size defaults to the number of input JSON files in `--input_dir` as a simple heuristic. For manual runs:
 
 ```bash
 python run_data_pipeline.py \
@@ -118,7 +118,7 @@ Note: If `CUDA_VISIBLE_DEVICES` is set, `--gpu_device` refers to the index withi
 | `--use_mmseqs_gpu` | `true` | Use GPU-accelerated MMseqs2 |
 | `--mmseqs_n_threads` | all CPUs | CPU threads for MMseqs2 non-GPU operations |
 | `--mmseqs_sequential` | `false` | Run database searches sequentially (lower memory) |
-| `--batch_size` | -- | Batch multiple inputs into one MMseqs2 search |
+| `--batch_size` | -- | Unique protein sequences per MMseqs2 batch |
 
 ### Template Search
 

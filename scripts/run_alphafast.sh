@@ -71,7 +71,8 @@ usage() {
     echo "                        If both given, --gpu_devices takes precedence."
     echo "  --container IMAGE     Container image or .sif path"
     echo "                        (default: romerolabduke/alphafast:latest)"
-    echo "  --batch_size N        MSA batch size (default: auto = number of inputs)"
+    echo "  --batch_size N        Unique protein sequences per MSA batch"
+    echo "                        (default: auto = number of inputs)"
     echo "  --backend TYPE        Force 'docker' or 'singularity' (default: auto-detect)"
     echo "  --temp_dir DIR        Directory for MMseqs temporary files."
     echo "                        Recommended on HPC: point this to fast local scratch"
@@ -166,7 +167,8 @@ if [ -n "$TEMP_DIR" ]; then
     TEMP_DIR="$(cd "$TEMP_DIR" && pwd)"
 fi
 
-# Auto batch size: count input JSON files
+# Auto batch size heuristic: count input JSON files. The Python pipeline applies
+# this as the maximum number of unique protein sequences per MMseqs2 batch.
 if [ -z "$BATCH_SIZE" ]; then
     BATCH_SIZE=$(find "$INPUT_DIR" -maxdepth 1 -name "*.json" -type f | wc -l | tr -d ' ')
     if [ "$BATCH_SIZE" -eq 0 ]; then

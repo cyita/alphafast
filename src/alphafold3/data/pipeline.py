@@ -1393,23 +1393,33 @@ class DataPipeline:
         return dataclasses.replace(fold_input, chains=ordered_chains)
 
     def process_batch(
-        self, fold_inputs: Sequence[folding_input.Input]
+        self,
+        fold_inputs: Sequence[folding_input.Input],
+        max_unique_sequences_per_batch: int | None = None,
     ) -> Sequence[folding_input.Input]:
         """Process multiple fold inputs with batched MSA search.
 
         This method is more efficient than processing individually because:
-        1. Single createdb call for ALL protein sequences
-        2. GPU processes all sequences in parallel
+        1. Single createdb call per unique sequence batch
+        2. GPU processes sequences in parallel within each batch
         3. Amortizes GPU kernel launch overhead
 
         Args:
             fold_inputs: Sequence of fold inputs to process together.
+            max_unique_sequences_per_batch: Maximum number of unique protein
+                sequences per MMseqs2 query batch. If None, all unique protein
+                sequences are searched in a single MMseqs2 batch.
 
         Returns:
             Sequence of processed fold inputs with MSA and templates.
         """
         if not fold_inputs:
             return []
+        if (
+            max_unique_sequences_per_batch is not None
+            and max_unique_sequences_per_batch < 1
+        ):
+            raise ValueError("max_unique_sequences_per_batch must be at least 1")
 
         # Check if using MMseqs2 (required for batch mode)
         is_mmseqs = isinstance(
@@ -1548,8 +1558,35 @@ class DataPipeline:
             temp_dir=self._temp_dir,
         )
 
-        logging.info("Running batch MSA search across all databases...")
-        msa_results = batch_searcher.search_all_databases_pipelined(all_sequences)
+        sequence_items = list(all_sequences.items())
+        if max_unique_sequences_per_batch is None:
+            sequence_batches = [all_sequences]
+        else:
+            sequence_batches = [
+                dict(sequence_items[i : i + max_unique_sequences_per_batch])
+                for i in range(
+                    0, len(sequence_items), max_unique_sequences_per_batch
+                )
+            ]
+
+        logging.info(
+            "Running batch MSA search across all databases in %d "
+            "unique-sequence batch(es)...",
+            len(sequence_batches),
+        )
+        msa_results_by_db = {}
+        for batch_idx, sequence_batch in enumerate(sequence_batches, start=1):
+            logging.info(
+                "Running MMseqs2 unique-sequence batch %d/%d (%d sequences)...",
+                batch_idx,
+                len(sequence_batches),
+                len(sequence_batch),
+            )
+            batch_msa_results = batch_searcher.search_all_databases_pipelined(
+                sequence_batch
+            )
+            for db_name, db_result in batch_msa_results.items():
+                msa_results_by_db.setdefault(db_name, {}).update(db_result.results)
         logging.info(
             "Batch MSA search completed in %.2f seconds",
             time.time() - batch_start_time,
@@ -1561,20 +1598,24 @@ class DataPipeline:
 
         for seq_id, sequence in all_sequences.items():
             # Get results for each database
-            uniref90_result = msa_results.get("uniref90")
-            mgnify_result = msa_results.get("mgnify")
-            small_bfd_result = msa_results.get("small_bfd")
-            uniprot_result = msa_results.get("uniprot")
+            uniref90_results = msa_results_by_db.get("uniref90", {})
+            mgnify_results = msa_results_by_db.get("mgnify", {})
+            small_bfd_results = msa_results_by_db.get("small_bfd", {})
+            uniprot_results = msa_results_by_db.get("uniprot", {})
 
             # Parse A3M to Msa objects
             uniref90_a3m = (
-                uniref90_result.results[seq_id].a3m if uniref90_result else ""
+                uniref90_results[seq_id].a3m if seq_id in uniref90_results else ""
             )
-            mgnify_a3m = mgnify_result.results[seq_id].a3m if mgnify_result else ""
+            mgnify_a3m = (
+                mgnify_results[seq_id].a3m if seq_id in mgnify_results else ""
+            )
             small_bfd_a3m = (
-                small_bfd_result.results[seq_id].a3m if small_bfd_result else ""
+                small_bfd_results[seq_id].a3m if seq_id in small_bfd_results else ""
             )
-            uniprot_a3m = uniprot_result.results[seq_id].a3m if uniprot_result else ""
+            uniprot_a3m = (
+                uniprot_results[seq_id].a3m if seq_id in uniprot_results else ""
+            )
 
             uniref90_msa = msa.Msa.from_a3m(
                 query_sequence=sequence,

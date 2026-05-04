@@ -138,11 +138,11 @@ _TEMP_DIR = flags.DEFINE_string(
 _BATCH_SIZE = flags.DEFINE_integer(
     "batch_size",
     512,
-    "Number of fold inputs to process together in a single batch. When set, "
-    "all protein sequences from up to batch_size fold inputs are collected "
-    "into a single MMseqs2 queryDB for GPU-accelerated batch search. This is "
-    "much more efficient than sequential processing. Set to 0 to disable "
-    "batch mode and process each fold input sequentially.",
+    "Maximum number of unique protein sequences to process in a single "
+    "MMseqs2 query batch. Protein chains are collected and deduplicated across "
+    "all loaded fold inputs before batching, so multi-chain JSON files are "
+    "batched efficiently. Set to 0 to disable batch mode and process each fold "
+    "input sequentially.",
     lower_bound=0,
 )
 
@@ -610,49 +610,44 @@ def main(_):
         rna_mmseqs_db_dir=rna_mmseqs_db_dir,
     )
 
-    # Process fold inputs - either in batch mode or sequentially
+    # Process fold inputs - either in unique-sequence batch mode or sequentially
     output_paths = []
     data_pipeline = pipeline.DataPipeline(data_pipeline_config)
 
     pipeline_start_time = time.time()
-    use_batch = _BATCH_SIZE.value and _BATCH_SIZE.value > 0 and len(fold_inputs) > 1
+    use_batch = _BATCH_SIZE.value and _BATCH_SIZE.value > 0
     mode = "batch" if use_batch else "sequential"
 
     if use_batch:
-        # Batch mode: process multiple fold inputs together
+        # Batch mode: process all fold inputs together, chunking by unique
+        # protein sequences inside DataPipeline.process_batch().
         batch_size = _BATCH_SIZE.value
         print(f"\n{'=' * 60}")
         print(
-            f"BATCH MODE: Processing {len(fold_inputs)} fold inputs in batches of {batch_size}"
+            f"BATCH MODE: Processing {len(fold_inputs)} fold inputs with up to "
+            f"{batch_size} unique protein sequences per MMseqs2 batch"
         )
         print(f"{'=' * 60}\n")
 
-        # Process in batches
-        for batch_start in range(0, len(fold_inputs), batch_size):
-            batch_end = min(batch_start + batch_size, len(fold_inputs))
-            batch = fold_inputs[batch_start:batch_end]
+        processed_inputs = data_pipeline.process_batch(
+            fold_inputs,
+            max_unique_sequences_per_batch=batch_size,
+        )
 
-            print(
-                f"\n--- Processing batch {batch_start // batch_size + 1}: "
-                f"fold inputs {batch_start + 1} to {batch_end} ---\n"
+        # Write output for each processed input
+        for fold_input in processed_inputs:
+            output_subdir = os.path.join(
+                _OUTPUT_DIR.value, fold_input.sanitised_name()
             )
-
-            processed_inputs = data_pipeline.process_batch(batch)
-
-            # Write output for each processed input
-            for fold_input in processed_inputs:
-                output_subdir = os.path.join(
-                    _OUTPUT_DIR.value, fold_input.sanitised_name()
+            output_path = write_fold_input_json(fold_input, output_subdir)
+            output_paths.append(output_path)
+            if _QUEUE_DIR.value is not None:
+                _write_queue_token(
+                    queue_dir=_QUEUE_DIR.value,
+                    fold_input=fold_input,
+                    data_json_path=output_path,
                 )
-                output_path = write_fold_input_json(fold_input, output_subdir)
-                output_paths.append(output_path)
-                if _QUEUE_DIR.value is not None:
-                    _write_queue_token(
-                        queue_dir=_QUEUE_DIR.value,
-                        fold_input=fold_input,
-                        data_json_path=output_path,
-                    )
-                print(f"Fold job {fold_input.name} done.\n")
+            print(f"Fold job {fold_input.name} done.\n")
     else:
         # Sequential mode: process each fold input individually
         if not use_batch:

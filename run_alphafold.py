@@ -147,11 +147,11 @@ _MMSEQS_SEQUENTIAL = flags.DEFINE_bool(
 _BATCH_SIZE = flags.DEFINE_integer(
     "batch_size",
     None,
-    "Number of fold inputs to process together in a single batch. When set, "
-    "all protein sequences from up to batch_size fold inputs are collected "
-    "into a single MMseqs2 queryDB for GPU-accelerated batch search. This is "
-    "much more efficient than sequential processing. If not set, processes "
-    "each fold input sequentially (current default behavior).",
+    "Maximum number of unique protein sequences to process in a single "
+    "MMseqs2 query batch. Protein chains are collected and deduplicated across "
+    "all loaded fold inputs before batching, so multi-chain JSON files are "
+    "batched efficiently. If not set, processes each fold input sequentially "
+    "(current default behavior).",
     lower_bound=1,
 )
 
@@ -681,42 +681,31 @@ def main(_):
             expanded_fold_inputs.append(fold_input)
 
         # Check if batch mode is enabled
-        if _BATCH_SIZE.value is not None and len(expanded_fold_inputs) > 1:
-            # Batch mode: process multiple fold inputs together
+        if _BATCH_SIZE.value is not None:
+            # Batch mode: process all fold inputs together, chunking by unique
+            # protein sequences inside DataPipeline.process_batch().
             batch_size = _BATCH_SIZE.value
             print(
                 f"\nBATCH MODE: Processing {len(expanded_fold_inputs)} fold inputs "
-                f"in batches of {batch_size}\n"
+                f"with up to {batch_size} unique protein sequences per MMseqs2 batch\n"
             )
 
             data_pipeline = pipeline.DataPipeline(data_pipeline_config)
 
-            # Process in batches
-            for batch_start in range(0, len(expanded_fold_inputs), batch_size):
-                batch_end = min(
-                    batch_start + batch_size, len(expanded_fold_inputs)
+            processed_inputs = data_pipeline.process_batch(
+                expanded_fold_inputs,
+                max_unique_sequences_per_batch=batch_size,
+            )
+
+            # Store each processed input with its output directory
+            for processed_input in processed_inputs:
+                output_dir = os.path.join(
+                    _OUTPUT_DIR.value, processed_input.sanitised_name()
                 )
-                batch = expanded_fold_inputs[batch_start:batch_end]
-
-                print(
-                    f"\n--- Processing batch {batch_start // batch_size + 1}: "
-                    f"fold inputs {batch_start + 1} to {batch_end} ---\n"
-                )
-
-                # Run batch processing
-                processed_inputs = data_pipeline.process_batch(batch)
-
-                # Store each processed input with its output directory
-                for processed_input in processed_inputs:
-                    output_dir = os.path.join(
-                        _OUTPUT_DIR.value, processed_input.sanitised_name()
-                    )
-                    # Write the processed data JSON
-                    write_fold_input_json(processed_input, output_dir)
-                    processed_fold_inputs.append((processed_input, output_dir))
-                    print(
-                        f"Fold job {processed_input.name} data pipeline done.\n"
-                    )
+                # Write the processed data JSON
+                write_fold_input_json(processed_input, output_dir)
+                processed_fold_inputs.append((processed_input, output_dir))
+                print(f"Fold job {processed_input.name} data pipeline done.\n")
         else:
             # Sequential mode: process each fold input individually
             if _BATCH_SIZE.value is None and len(expanded_fold_inputs) > 1:

@@ -203,4 +203,4 @@ inputs/
   protein_3.json
 ```
 
-Each file is processed independently. When `--batch_size` is set, protein sequences from multiple files are grouped into efficient batched MMseqs2-GPU searches.
+Each file is loaded as a separate fold input. When `--batch_size` is set, protein chains are collected and deduplicated across the loaded inputs, then grouped into efficient batched MMseqs2-GPU searches. Multiple protein chains from a single JSON file can therefore be searched in the same MMseqs2 batch.

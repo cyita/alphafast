@@ -20,7 +20,7 @@
 #   msa_output_dir  - Output directory for MSA JSONs
 #   af_output_dir   - Output directory for inference outputs
 #   num_gpus        - Number of GPUs (derived from gpu_list by caller)
-#   batch_size      - Batch size per GPU for MSA (default: 512)
+#   batch_size      - Unique protein sequences per MSA batch per GPU (default: 512)
 #   gpu_list        - Comma-separated GPU device indices (e.g. "6,7")
 #   mmseqs_threads  - CPU threads per GPU (default: total_cores / num_gpus)
 
@@ -32,7 +32,7 @@ usage() {
   echo "  msa_output_dir:  output directory for MSA JSONs"
   echo "  af_output_dir:   output directory for inference outputs"
   echo "  num_gpus:        number of GPUs to use"
-  echo "  batch_size:      batch size per GPU for MSA (default: partition size)"
+  echo "  batch_size:      unique protein sequences per MSA batch per GPU (default: 512)"
   echo "  gpu_list:        comma-separated GPU indices (default: 0,1,...,N-1)"
   echo "  mmseqs_threads:  CPU threads per GPU (default: total_cores / num_gpus)"
 }
