@@ -23,16 +23,40 @@ https://github.com/google-deepmind/alphafold3/blob/main/WEIGHTS_TERMS_OF_USE.md
 
 from collections.abc import Sequence
 import datetime
+import importlib.util
 import json
 import os
 import pathlib
 import string
+import sys
 import textwrap
 import time
 import typing
 
 from absl import app
 from absl import flags
+
+# Prefer the local source tree over any installed alphafold3 package.
+_APP_DIR = pathlib.Path(__file__).resolve().parent
+_SRC_DIR = _APP_DIR / "src"
+for _module_name in [name for name in sys.modules if name == "alphafold3" or name.startswith("alphafold3.")]:
+    del sys.modules[_module_name]
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
+
+_LOCAL_PKG_DIR = _SRC_DIR / "alphafold3"
+_LOCAL_PKG_INIT = _LOCAL_PKG_DIR / "__init__.py"
+_PKG_SPEC = importlib.util.spec_from_file_location(
+    "alphafold3",
+    _LOCAL_PKG_INIT,
+    submodule_search_locations=[str(_LOCAL_PKG_DIR)],
+)
+if _PKG_SPEC is None or _PKG_SPEC.loader is None:
+    raise ImportError(f"Failed to create import spec for local alphafold3 package at {_LOCAL_PKG_INIT}")
+_PKG_MODULE = importlib.util.module_from_spec(_PKG_SPEC)
+sys.modules["alphafold3"] = _PKG_MODULE
+_PKG_SPEC.loader.exec_module(_PKG_MODULE)
+
 from alphafold3.common import folding_input
 from alphafold3.common import resources
 from alphafold3.data import pipeline
@@ -431,6 +455,37 @@ def replace_db_dir(path_with_db_dir: str, db_dirs: Sequence[str]) -> str:
     return path_with_db_dir
 
 
+def _maybe_expand_fold_input_seeds(
+    fold_input: folding_input.Input,
+    num_seeds: int | None,
+) -> folding_input.Input:
+    """Expands seeds only when the input still has a single base seed.
+
+    Phase-1 outputs may already contain multiple model seeds. Reusing them keeps
+    inference compatible with both freshly generated and pre-existing *_data.json
+    files.
+    """
+    if num_seeds is None:
+        return fold_input
+
+    current_seed_count = len(fold_input.rng_seeds)
+    if current_seed_count == 1:
+        print(f"Expanding fold job {fold_input.name} to {num_seeds} seeds")
+        return fold_input.with_multiple_seeds(num_seeds)
+
+    if current_seed_count == num_seeds:
+        print(
+            f"Fold job {fold_input.name} already has {current_seed_count} seeds; "
+            "reusing them."
+        )
+    else:
+        print(
+            f"Fold job {fold_input.name} already has {current_seed_count} seeds; "
+            f"ignoring requested num_seeds={num_seeds} and reusing existing seeds."
+        )
+    return fold_input
+
+
 def main(_):
     if _JAX_COMPILATION_CACHE_DIR.value is not None:
         jax.config.update(
@@ -568,11 +623,9 @@ def main(_):
         # Expand seeds for all fold inputs first
         expanded_fold_inputs = []
         for fold_input in fold_inputs:
-            if _NUM_SEEDS.value is not None:
-                print(
-                    f"Expanding fold job {fold_input.name} to {_NUM_SEEDS.value} seeds"
-                )
-                fold_input = fold_input.with_multiple_seeds(_NUM_SEEDS.value)
+            fold_input = _maybe_expand_fold_input_seeds(
+                fold_input, _NUM_SEEDS.value
+            )
             expanded_fold_inputs.append(fold_input)
 
         # Check if batch mode is enabled
@@ -645,11 +698,9 @@ def main(_):
     else:
         # If not running data pipeline, just collect the inputs for inference
         for fold_input in fold_inputs:
-            if _NUM_SEEDS.value is not None:
-                print(
-                    f"Expanding fold job {fold_input.name} to {_NUM_SEEDS.value} seeds"
-                )
-                fold_input = fold_input.with_multiple_seeds(_NUM_SEEDS.value)
+            fold_input = _maybe_expand_fold_input_seeds(
+                fold_input, _NUM_SEEDS.value
+            )
             # When using --json_path with inference-only mode, use output_dir directly
             # since user explicitly specifies where to write output.
             # When using --input_dir, create subdirectories for each input.

@@ -16,6 +16,7 @@ import datetime
 import functools
 import os
 import re
+import time
 from typing import Any, Final, Self, TypeAlias
 
 from absl import logging
@@ -1027,5 +1028,77 @@ def run_mmseqs_template_search(
         gpu_enabled=mmseqs_config.gpu_enabled,
         gpu_device=mmseqs_config.gpu_device,
         threads=mmseqs_config.threads,
+        temp_dir=mmseqs_config.temp_dir,
     )
-    return searcher.query(query_sequence)
+    max_attempts = getattr(mmseqs_config, "max_attempts", 3)
+    retryable_signatures = (
+        "MMseqs2 template search failed",
+        "Ungapped prefilter died",
+        "CUDA error: initialization error",
+    )
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return searcher.query(query_sequence)
+        except RuntimeError as exc:
+            error_text = str(exc)
+            is_retryable = any(sig in error_text for sig in retryable_signatures)
+            if not is_retryable or attempt >= max_attempts:
+                raise
+
+            logging.warning(
+                "Retryable MMseqs2 template search failure for sequence %s "
+                "(attempt %d/%d). Retrying after backoff.",
+                query_sequence,
+                attempt,
+                max_attempts,
+            )
+            time.sleep(min(5 * attempt, 15))
+
+    raise RuntimeError("MMseqs2 template search exhausted retries unexpectedly")
+
+
+def run_mmseqs_template_search_batch(
+    *,
+    database_path: os.PathLike[str] | str,
+    mmseqs_config: msa_config.MmseqsTemplateConfig,
+    query_sequences: Mapping[str, str],
+) -> dict[str, str]:
+    """Runs batched MMseqs2 template search for multiple query sequences."""
+    searcher = mmseqs_template.MmseqsTemplateBatch(
+        binary_path=mmseqs_config.binary_path,
+        database_path=_resolve_path(database_path),
+        e_value=mmseqs_config.e_value,
+        sensitivity=mmseqs_config.sensitivity,
+        max_hits=mmseqs_config.max_hits,
+        gpu_enabled=mmseqs_config.gpu_enabled,
+        gpu_device=mmseqs_config.gpu_device,
+        threads=mmseqs_config.threads,
+        temp_dir=mmseqs_config.temp_dir,
+    )
+    max_attempts = getattr(mmseqs_config, "max_attempts", 3)
+    retryable_signatures = (
+        "MMseqs2 template search failed",
+        "Ungapped prefilter died",
+        "CUDA error: initialization error",
+    )
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return searcher.query_batch(query_sequences)
+        except RuntimeError as exc:
+            error_text = str(exc)
+            is_retryable = any(sig in error_text for sig in retryable_signatures)
+            if not is_retryable or attempt >= max_attempts:
+                raise
+
+            logging.warning(
+                "Retryable batched MMseqs2 template search failure "
+                "(attempt %d/%d for %d sequences). Retrying after backoff.",
+                attempt,
+                max_attempts,
+                len(query_sequences),
+            )
+            time.sleep(min(5 * attempt, 15))
+
+    raise RuntimeError("Batched MMseqs2 template search exhausted retries unexpectedly")

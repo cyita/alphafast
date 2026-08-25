@@ -51,7 +51,11 @@ The Modal deployment uses an alternative **producer-consumer** architecture via 
 
 The `--batch_size` flag controls how many input JSON files are processed together in a single MMseqs2 GPU search. All protein sequences from a batch are collected into a single MMseqs2 query database, which is significantly more efficient than sequential processing.
 
-When using `run_alphafast.sh`, the batch size defaults to the number of input JSON files in `--input_dir`. For manual runs:
+When calling `run_data_pipeline.py` directly, the batch size defaults to the number of input JSON files in `--input_dir`.
+
+For the bundled multi-GPU shell runners (`scripts/run_alphafast_local*.sh`), the default MSA batch is capped at `256` per GPU unless you override `--batch_size`. These runners also retry failed MSA partitions with progressively smaller batch sizes, which helps recover from MMseqs2-GPU OOM on difficult batches.
+
+For manual runs:
 
 ```bash
 python run_data_pipeline.py \

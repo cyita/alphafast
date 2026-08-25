@@ -26,19 +26,108 @@ Usage:
 
 from collections.abc import Sequence
 import datetime
+import importlib.util
 import json
 import os
 import pathlib
 import string
+import sys
 import time
+import inspect
 
 from absl import app
 from absl import flags
+
+# Prefer the local source tree over any installed alphafold3 package.
+_APP_DIR = pathlib.Path(__file__).resolve().parent
+_SRC_DIR = _APP_DIR / "src"
+for _module_name in [name for name in sys.modules if name == "alphafold3" or name.startswith("alphafold3.")]:
+    del sys.modules[_module_name]
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
+
+_LOCAL_PKG_DIR = _SRC_DIR / "alphafold3"
+_LOCAL_PKG_INIT = _LOCAL_PKG_DIR / "__init__.py"
+_PKG_SPEC = importlib.util.spec_from_file_location(
+    "alphafold3",
+    _LOCAL_PKG_INIT,
+    submodule_search_locations=[str(_LOCAL_PKG_DIR)],
+)
+if _PKG_SPEC is None or _PKG_SPEC.loader is None:
+    raise ImportError(f"Failed to create import spec for local alphafold3 package at {_LOCAL_PKG_INIT}")
+_PKG_MODULE = importlib.util.module_from_spec(_PKG_SPEC)
+sys.modules["alphafold3"] = _PKG_MODULE
+_PKG_SPEC.loader.exec_module(_PKG_MODULE)
 
 # IMPORTANT: Only import modules that do NOT depend on JAX
 from alphafold3.common import folding_input
 from alphafold3.data import pipeline
 from alphafold3.data.tools import shards
+
+
+def _load_local_module(module_name: str, file_path: pathlib.Path):
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Failed to create module spec for {file_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _apply_runtime_patches_if_needed() -> bool:
+    imported_path = inspect.getsourcefile(pipeline) or ""
+    if imported_path.startswith(str(_SRC_DIR)):
+        return False
+
+    from alphafold3.data import templates as live_templates
+    from alphafold3.data.tools import mmseqs_template as live_mmseqs_template
+
+    local_mmseqs_template = _load_local_module(
+        "_alphafast1_local_mmseqs_template",
+        _SRC_DIR / "alphafold3" / "data" / "tools" / "mmseqs_template.py",
+    )
+    live_mmseqs_template.MmseqsTemplateBatch = local_mmseqs_template.MmseqsTemplateBatch
+
+    local_templates = _load_local_module(
+        "_alphafast1_local_templates",
+        _SRC_DIR / "alphafold3" / "data" / "templates.py",
+    )
+    live_templates.run_mmseqs_template_search = (
+        local_templates.run_mmseqs_template_search
+    )
+    live_templates.run_mmseqs_template_search_batch = (
+        local_templates.run_mmseqs_template_search_batch
+    )
+
+    local_pipeline = _load_local_module(
+        "_alphafast1_local_pipeline",
+        _SRC_DIR / "alphafold3" / "data" / "pipeline.py",
+    )
+    for method_name in (
+        "_auto_template_batch_size",
+        "_get_batched_template_hits",
+        "process_batch",
+    ):
+        setattr(
+            pipeline.DataPipeline,
+            method_name,
+            getattr(local_pipeline.DataPipeline, method_name),
+        )
+    return True
+
+
+_PATCH_APPLIED = _apply_runtime_patches_if_needed()
+
+print(
+    f"Imported pipeline from: {inspect.getsourcefile(pipeline)}",
+    flush=True,
+)
+print(f"Runtime patches applied: {_PATCH_APPLIED}", flush=True)
+print(
+    "DataPipelineConfig fields: "
+    + ",".join(sorted(pipeline.DataPipelineConfig.__dataclass_fields__.keys())),
+    flush=True,
+)
 
 
 _HOME_DIR = pathlib.Path(os.environ.get("HOME", "/root"))
@@ -180,6 +269,19 @@ _TEMPLATE_MIN_COVERAGE = flags.DEFINE_float(
     "Minimum alignment coverage (0-1) for template search. Default 0.40 (40%).",
     lower_bound=0.0,
     upper_bound=1.0,
+)
+_TEMPLATE_BATCH_SIZE = flags.DEFINE_integer(
+    "template_batch_size",
+    None,
+    "Optional number of unique sequences to process together in batched "
+    "MMseqs2 template search. If not set, an automatic value is used in batch mode.",
+    lower_bound=1,
+)
+_TEMPLATE_MAX_ATTEMPTS = flags.DEFINE_integer(
+    "template_max_attempts",
+    3,
+    "Maximum retry attempts for retryable MMseqs2 template-search failures.",
+    lower_bound=1,
 )
 
 # Foldseek configuration (for structural template search from AFDB).
@@ -429,7 +531,7 @@ def main(_):
 
     max_template_date = datetime.date.fromisoformat(_MAX_TEMPLATE_DATE.value)
 
-    data_pipeline_config = pipeline.DataPipelineConfig(
+    config_kwargs = dict(
         pdb_database_path=expand_path(_PDB_DATABASE_PATH.value),
         max_template_date=max_template_date,
         # MMseqs2-GPU configuration
@@ -444,6 +546,8 @@ def main(_):
         # Template search thresholds
         template_e_value=_TEMPLATE_E_VALUE.value,
         template_min_coverage=_TEMPLATE_MIN_COVERAGE.value,
+        template_batch_size=_TEMPLATE_BATCH_SIZE.value,
+        template_max_attempts=_TEMPLATE_MAX_ATTEMPTS.value,
         # Template mode
         template_mode=_TEMPLATE_MODE.value,
         # Foldseek configuration
@@ -459,6 +563,11 @@ def main(_):
         esmfold_chunk_size=_ESMFOLD_CHUNK_SIZE.value,
         afdb_cache_dir=_AFDB_CACHE_DIR.value,
     )
+    supported_fields = set(pipeline.DataPipelineConfig.__dataclass_fields__.keys())
+    filtered_config_kwargs = {
+        key: value for key, value in config_kwargs.items() if key in supported_fields
+    }
+    data_pipeline_config = pipeline.DataPipelineConfig(**filtered_config_kwargs)
 
     # Process fold inputs - either in batch mode or sequentially
     output_paths = []

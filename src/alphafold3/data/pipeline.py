@@ -316,6 +316,8 @@ class DataPipelineConfig:
     # Note: NO sequence identity filter - rely on e-value and coverage only.
     template_e_value: float = 1e-3  # Much stricter than MSA e-value
     template_min_coverage: float = 0.40  # 40% - good alignment coverage
+    template_batch_size: int | None = None
+    template_max_attempts: int = 3
 
     # Template mode configuration.
     # - "default": Only use MMseqs2-GPU with PDB (no Foldseek)
@@ -371,6 +373,7 @@ class DataPipeline:
                 gpu_enabled=data_pipeline_config.use_mmseqs_gpu,
                 gpu_device=data_pipeline_config.gpu_device,
                 threads=data_pipeline_config.mmseqs_n_threads,
+                temp_dir=data_pipeline_config.temp_dir,
             ),
             chain_poly_type=mmcif_names.PROTEIN_CHAIN,
             crop_size=None,
@@ -388,6 +391,7 @@ class DataPipeline:
                 gpu_enabled=data_pipeline_config.use_mmseqs_gpu,
                 gpu_device=data_pipeline_config.gpu_device,
                 threads=data_pipeline_config.mmseqs_n_threads,
+                temp_dir=data_pipeline_config.temp_dir,
             ),
             chain_poly_type=mmcif_names.PROTEIN_CHAIN,
             crop_size=None,
@@ -405,6 +409,7 @@ class DataPipeline:
                 gpu_enabled=data_pipeline_config.use_mmseqs_gpu,
                 gpu_device=data_pipeline_config.gpu_device,
                 threads=data_pipeline_config.mmseqs_n_threads,
+                temp_dir=data_pipeline_config.temp_dir,
             ),
             chain_poly_type=mmcif_names.PROTEIN_CHAIN,
             crop_size=None,
@@ -422,6 +427,7 @@ class DataPipeline:
                 gpu_enabled=data_pipeline_config.use_mmseqs_gpu,
                 gpu_device=data_pipeline_config.gpu_device,
                 threads=data_pipeline_config.mmseqs_n_threads,
+                temp_dir=data_pipeline_config.temp_dir,
             ),
             chain_poly_type=mmcif_names.PROTEIN_CHAIN,
             crop_size=None,
@@ -466,6 +472,9 @@ class DataPipeline:
                         gpu_enabled=data_pipeline_config.use_mmseqs_gpu,
                         gpu_device=data_pipeline_config.gpu_device,
                         threads=data_pipeline_config.mmseqs_n_threads,
+                        temp_dir=data_pipeline_config.temp_dir,
+                        batch_size=data_pipeline_config.template_batch_size,
+                        max_attempts=data_pipeline_config.template_max_attempts,
                     ),
                 ),
                 filter_config=template_filter_config,
@@ -798,6 +807,88 @@ class DataPipeline:
             logging.warning("Unknown foldseek_mode: %s", mode)
             return pdb_templates[:max_total_templates]
 
+    def _auto_template_batch_size(self, total_sequences: int) -> int:
+        """Choose a conservative default batch size for template search."""
+        if total_sequences <= 0:
+            return 1
+        return min(128, total_sequences)
+
+    def _get_batched_template_hits(
+        self,
+        *,
+        seq_id_to_sequence: dict[str, str],
+        seq_id_to_unpaired_a3m: dict[str, str],
+    ) -> dict[str, templates_lib.Templates]:
+        """Run batched MMseqs2 template search for unique sequences.
+
+        Falls back to the existing per-sequence path for any batch that still
+        fails after bounded retries.
+        """
+        if not seq_id_to_sequence:
+            return {}
+
+        mmseqs_template_config = self._templates_config.template_tool_config.mmseqs_config
+        if mmseqs_template_config is None:
+            return {}
+
+        configured_batch_size = getattr(mmseqs_template_config, "batch_size", None)
+        batch_size = (
+            configured_batch_size
+            if configured_batch_size is not None
+            else self._auto_template_batch_size(len(seq_id_to_sequence))
+        )
+        batch_size = max(1, min(batch_size, len(seq_id_to_sequence)))
+
+        structure_store = structure_stores.StructureStore(self._pdb_database_path)
+        seq_items = list(seq_id_to_sequence.items())
+        seq_id_to_template_hits: dict[str, templates_lib.Templates] = {}
+
+        logging.info(
+            "Running batched MMseqs2 template search for %d unique sequences "
+            "(template_batch_size=%d)",
+            len(seq_items),
+            batch_size,
+        )
+
+        for batch_start in range(0, len(seq_items), batch_size):
+            batch_items = seq_items[batch_start : batch_start + batch_size]
+            batch_sequences = dict(batch_items)
+            batch_label = f"{batch_start // batch_size + 1}"
+            try:
+                batch_a3m_results = templates_lib.run_mmseqs_template_search_batch(
+                    database_path=self._templates_config.template_tool_config.database_path,
+                    mmseqs_config=mmseqs_template_config,
+                    query_sequences=batch_sequences,
+                )
+                for seq_id, sequence in batch_items:
+                    seq_id_to_template_hits[seq_id] = templates_lib.Templates.from_hmmsearch_a3m(
+                        query_sequence=sequence,
+                        a3m=batch_a3m_results.get(seq_id, ""),
+                        max_template_date=self._templates_config.filter_config.max_template_date,
+                        chain_poly_type=mmcif_names.PROTEIN_CHAIN,
+                        structure_store=structure_store,
+                        filter_config=self._templates_config.filter_config,
+                    )
+            except RuntimeError as exc:
+                logging.warning(
+                    "Batched MMseqs2 template search failed for batch %s "
+                    "(%d sequences). Falling back to per-sequence template search. "
+                    "Error: %s",
+                    batch_label,
+                    len(batch_sequences),
+                    exc,
+                )
+                for seq_id, sequence in batch_items:
+                    seq_id_to_template_hits[seq_id] = _get_protein_templates(
+                        sequence=sequence,
+                        input_msa_a3m=seq_id_to_unpaired_a3m[seq_id],
+                        run_template_search=True,
+                        templates_config=self._templates_config,
+                        pdb_database_path=self._pdb_database_path,
+                    )
+
+        return seq_id_to_template_hits
+
     def process_protein_chain(
         self, chain: folding_input.ProteinChain
     ) -> folding_input.ProteinChain:
@@ -1092,6 +1183,7 @@ class DataPipeline:
             gpu_enabled=mmseqs_cfg.gpu_enabled,
             gpu_device=mmseqs_cfg.gpu_device,
             threads=mmseqs_cfg.threads,
+            temp_dir=mmseqs_cfg.temp_dir,
         )
 
         logging.info("Running batch MSA search across all databases...")
@@ -1101,9 +1193,10 @@ class DataPipeline:
             time.time() - batch_start_time,
         )
 
-        # Step 3: Build a mapping from sequence to MSA results
-        # seq_id -> (uniref90_msa, mgnify_msa, small_bfd_msa, uniprot_msa)
-        seq_id_to_msa: dict[str, tuple[msa.Msa, msa.Msa, msa.Msa, msa.Msa]] = {}
+        # Step 3: Build a mapping from sequence to combined MSA results.
+        # seq_id -> (unpaired_protein_msa, paired_protein_msa)
+        seq_id_to_msa: dict[str, tuple[msa.Msa, msa.Msa]] = {}
+        seq_id_to_unpaired_a3m: dict[str, str] = {}
 
         for seq_id, sequence in all_sequences.items():
             # Get results for each database
@@ -1143,17 +1236,51 @@ class DataPipeline:
                 a3m=uniprot_a3m,
             )
 
-            seq_id_to_msa[seq_id] = (
-                uniref90_msa,
-                mgnify_msa,
-                small_bfd_msa,
-                uniprot_msa,
+            unpaired_protein_msa = msa.Msa.from_multiple_msas(
+                msas=[uniref90_msa, small_bfd_msa, mgnify_msa],
+                deduplicate=True,
             )
+            paired_protein_msa = msa.Msa.from_multiple_msas(
+                msas=[uniprot_msa], deduplicate=False
+            )
+
+            seq_id_to_msa[seq_id] = (unpaired_protein_msa, paired_protein_msa)
+            seq_id_to_unpaired_a3m[seq_id] = unpaired_protein_msa.to_a3m()
 
         # Step 4: Create mapping from sequence content to seq_id
         seq_content_to_id = {seq: seq_id for seq_id, seq in all_sequences.items()}
 
-        # Step 5: Process each fold input, distributing MSA results
+        # Step 5: Pre-compute template hits for unique sequences that need them.
+        template_seq_ids_to_search = set()
+        for fold_input in fold_inputs:
+            for chain in fold_input.chains:
+                if not isinstance(chain, folding_input.ProteinChain):
+                    continue
+                if chain.unpaired_msa is None and chain.paired_msa is None and chain.templates is None:
+                    seq_id = seq_content_to_id.get(chain.sequence)
+                    if seq_id is not None:
+                        template_seq_ids_to_search.add(seq_id)
+
+        seq_id_to_template_hits: dict[str, templates_lib.Templates] = {}
+        template_mmseqs_config = self._templates_config.template_tool_config.mmseqs_config
+        can_batch_templates = (
+            bool(template_seq_ids_to_search)
+            and template_mmseqs_config is not None
+        )
+        if can_batch_templates:
+            batch_sequences = {
+                seq_id: all_sequences[seq_id] for seq_id in sorted(template_seq_ids_to_search)
+            }
+            batch_unpaired_a3m = {
+                seq_id: seq_id_to_unpaired_a3m[seq_id]
+                for seq_id in sorted(template_seq_ids_to_search)
+            }
+            seq_id_to_template_hits = self._get_batched_template_hits(
+                seq_id_to_sequence=batch_sequences,
+                seq_id_to_unpaired_a3m=batch_unpaired_a3m,
+            )
+
+        # Step 6: Process each fold input, distributing MSA results
         processed_fold_inputs = []
 
         for fold_idx, fold_input in enumerate(fold_inputs):
@@ -1170,28 +1297,20 @@ class DataPipeline:
                         seq_id = seq_content_to_id.get(seq)
 
                         if seq_id and seq_id in seq_id_to_msa:
-                            uniref90_msa, mgnify_msa, small_bfd_msa, uniprot_msa = (
-                                seq_id_to_msa[seq_id]
-                            )
-
-                            # Deduplicate MSAs (same as sequential processing)
-                            unpaired_protein_msa = msa.Msa.from_multiple_msas(
-                                msas=[uniref90_msa, small_bfd_msa, mgnify_msa],
-                                deduplicate=True,
-                            )
-                            paired_protein_msa = msa.Msa.from_multiple_msas(
-                                msas=[uniprot_msa], deduplicate=False
-                            )
+                            unpaired_protein_msa, paired_protein_msa = seq_id_to_msa[seq_id]
 
                             # Run template search (depends on MSA, so still per-chain)
                             has_templates = chain.templates is not None
-                            template_hits = _get_protein_templates(
-                                sequence=chain.sequence,
-                                input_msa_a3m=unpaired_protein_msa.to_a3m(),
-                                run_template_search=not has_templates,
-                                templates_config=self._templates_config,
-                                pdb_database_path=self._pdb_database_path,
-                            )
+                            if not has_templates and seq_id in seq_id_to_template_hits:
+                                template_hits = seq_id_to_template_hits[seq_id]
+                            else:
+                                template_hits = _get_protein_templates(
+                                    sequence=chain.sequence,
+                                    input_msa_a3m=seq_id_to_unpaired_a3m[seq_id],
+                                    run_template_search=not has_templates,
+                                    templates_config=self._templates_config,
+                                    pdb_database_path=self._pdb_database_path,
+                                )
 
                             pdb_templates = [
                                 folding_input.Template(

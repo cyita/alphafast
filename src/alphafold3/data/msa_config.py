@@ -146,6 +146,10 @@ class MmseqsTemplateConfig:
       threads: Number of CPU threads for non-GPU parts of the search.
       temp_dir: Directory for temporary files. If None, uses system default.
         Set to fast local storage on HPC clusters for better performance.
+      batch_size: Number of query sequences to process together for batched
+        template search. If None, the caller chooses an automatic value.
+      max_attempts: Maximum retry attempts for retryable template-search
+        failures.
     """
 
     binary_path: str
@@ -157,6 +161,8 @@ class MmseqsTemplateConfig:
     gpu_device: int | None = None
     threads: int = 8
     temp_dir: str | None = None
+    batch_size: int | None = None
+    max_attempts: int = 3
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True, slots=True)

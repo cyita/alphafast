@@ -7,6 +7,7 @@
 """Library to run MMseqs2 GPU-accelerated template search from Python."""
 
 from concurrent import futures
+from collections.abc import Mapping
 import os
 import pathlib
 import shutil
@@ -14,6 +15,7 @@ import tempfile
 import time
 
 from absl import logging
+from alphafold3.data.tools import mmseqs as mmseqs_module
 from alphafold3.data.tools import subprocess_utils
 
 
@@ -519,7 +521,10 @@ class MmseqsTemplate:
         return alignment_info
 
     def _reformat_a3m_headers(
-        self, raw_a3m: str, alignment_info: dict[str, tuple[int, int, int]]
+        self,
+        raw_a3m: str,
+        alignment_info: dict[str, tuple[int, int, int]],
+        query_id: str | None = None,
     ) -> str:
         """Reformats A3M headers to include alignment coordinates.
 
@@ -572,7 +577,12 @@ class MmseqsTemplate:
             header = header_line[1:]  # Remove ">"
 
             # Skip query sequence
-            if header.lower() == "query" or header.lower().startswith("query "):
+            if (
+                header.lower() == "query"
+                or header.lower().startswith("query ")
+                or (query_id is not None and header == query_id)
+                or (query_id is not None and header.startswith(f"{query_id} "))
+            ):
                 continue
 
             # Extract target ID (first space-separated token)
@@ -617,3 +627,189 @@ class MmseqsTemplate:
             reformatted_lines.append(sequence)
 
         return "\n".join(reformatted_lines)
+
+
+class MmseqsTemplateBatch:
+    """Batch MMseqs2 template search using a shared query database."""
+
+    def __init__(
+        self,
+        *,
+        binary_path: str,
+        database_path: str,
+        e_value: float = 100.0,
+        sensitivity: float = 7.5,
+        max_hits: int = 1000,
+        gpu_enabled: bool = True,
+        gpu_device: int | None = None,
+        threads: int = 8,
+        temp_dir: str | None = None,
+    ):
+        self._single = MmseqsTemplate(
+            binary_path=binary_path,
+            database_path=database_path,
+            e_value=e_value,
+            sensitivity=sensitivity,
+            max_hits=max_hits,
+            gpu_enabled=gpu_enabled,
+            gpu_device=gpu_device,
+            threads=threads,
+            temp_dir=temp_dir,
+        )
+        self._binary_path = binary_path
+        self._database_path = database_path
+        self._temp_dir = temp_dir
+
+    def query_batch(self, query_sequences: Mapping[str, str]) -> dict[str, str]:
+        """Run template search for multiple queries in one MMseqs2 batch."""
+        if not query_sequences:
+            return {}
+
+        total_start = time.time()
+        with tempfile.TemporaryDirectory(dir=self._temp_dir) as tmp_dir:
+            tmp_path = pathlib.Path(tmp_dir)
+            query_db_dir = tmp_path / "query_db"
+            query_db_dir.mkdir()
+            query_db, _ = mmseqs_module.create_query_db(
+                binary_path=self._binary_path,
+                sequences=dict(query_sequences),
+                output_dir=str(query_db_dir),
+            )
+
+            result_db = tmp_path / "resultDB"
+            tmp_search = tmp_path / "tmp"
+            tmp_search.mkdir()
+            aln_tab = tmp_path / "alignments.tab"
+            msa_db = tmp_path / "msaDB"
+            output_dir = tmp_path / "output"
+            output_dir.mkdir()
+
+            self._single._run_search(
+                query_db=str(query_db),
+                target_db=self._database_path,
+                result_db=str(result_db),
+                tmp_dir=str(tmp_search),
+            )
+            alignment_info = self._run_convertalis_batch(
+                query_db=str(query_db),
+                target_db=self._database_path,
+                result_db=str(result_db),
+                output_file=str(aln_tab),
+            )
+            self._single._run_result2msa(
+                query_db=str(query_db),
+                target_db=self._database_path,
+                result_db=str(result_db),
+                msa_db=str(msa_db),
+            )
+            self._single._run_unpackdb(
+                msa_db=str(msa_db),
+                output_dir=str(output_dir),
+            )
+
+            results = self._parse_batch_results(
+                query_sequences=dict(query_sequences),
+                query_db=str(query_db),
+                output_dir=output_dir,
+                alignment_info=alignment_info,
+            )
+
+        logging.info(
+            "MMseqs2 batched template search completed in %.2f seconds for %d queries",
+            time.time() - total_start,
+            len(query_sequences),
+        )
+        return results
+
+    def _run_convertalis_batch(
+        self,
+        query_db: str,
+        target_db: str,
+        result_db: str,
+        output_file: str,
+    ) -> dict[str, dict[str, tuple[int, int, int]]]:
+        """Collect alignment coordinates for each query/target hit."""
+        cmd = [
+            self._binary_path,
+            "convertalis",
+            query_db,
+            target_db,
+            result_db,
+            output_file,
+            "--format-output",
+            "query,target,tstart,tend,tlen",
+        ]
+        subprocess_utils.run(
+            cmd=cmd,
+            cmd_name="MMseqs2 convertalis (template batch)",
+            log_stdout=False,
+            log_stderr=True,
+            log_on_process_error=True,
+            env=self._single._get_env(),
+        )
+
+        alignment_info: dict[str, dict[str, tuple[int, int, int]]] = {}
+        if os.path.exists(output_file):
+            with open(output_file, "r") as f:
+                for line in f:
+                    parts = line.strip().split("\t")
+                    if len(parts) < 5:
+                        continue
+                    query_id, target_id = parts[0], parts[1]
+                    tstart = int(parts[2]) + 1
+                    tend = int(parts[3])
+                    tlen = int(parts[4])
+                    query_hits = alignment_info.setdefault(query_id, {})
+                    if target_id not in query_hits:
+                        query_hits[target_id] = (tstart, tend, tlen)
+
+        logging.info(
+            "Batched convertalis collected alignment info for %d query sequences",
+            len(alignment_info),
+        )
+        return alignment_info
+
+    def _parse_batch_results(
+        self,
+        *,
+        query_sequences: dict[str, str],
+        query_db: str,
+        output_dir: pathlib.Path,
+        alignment_info: dict[str, dict[str, tuple[int, int, int]]],
+    ) -> dict[str, str]:
+        """Parse unpacked A3M files back into per-query template A3Ms."""
+        lookup_file = f"{query_db}.lookup"
+        index_to_query_id: dict[int, str] = {}
+
+        if os.path.exists(lookup_file):
+            with open(lookup_file) as f:
+                for line in f:
+                    parts = line.strip().split("\t")
+                    if len(parts) >= 2:
+                        index_to_query_id[int(parts[0])] = parts[1]
+        else:
+            index_to_query_id = {
+                idx: query_id for idx, query_id in enumerate(query_sequences.keys())
+            }
+
+        results: dict[str, str] = {}
+        for idx, query_id in index_to_query_id.items():
+            if query_id not in query_sequences:
+                continue
+            a3m_file = output_dir / str(idx)
+            if not a3m_file.exists():
+                results[query_id] = ""
+                continue
+
+            raw_a3m = a3m_file.read_text()
+            query_alignment_info = alignment_info.get(query_id, {})
+            results[query_id] = self._single._reformat_a3m_headers(
+                raw_a3m,
+                query_alignment_info,
+                query_id=query_id,
+            )
+
+        for query_id in query_sequences:
+            results.setdefault(query_id, "")
+
+        return results
