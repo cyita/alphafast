@@ -1,0 +1,13 @@
+{
+  "tensors": {
+    "confidence_ptm": {"atol": 0.01, "rtol": 0.02},
+    "confidence_iptm": {"atol": 0.01, "rtol": 0.02},
+    "confidence_ptm_iptm_average": {"atol": 0.01, "rtol": 0.02},
+    "confidence_ranking_confidence": {"atol": 0.01, "rtol": 0.02},
+    "confidence_predicted_distance_error": {"atol": 0.01, "rtol": 0.02},
+    "confidence_fraction_disordered": {"atol": 0.01, "rtol": 0.02},
+    "confidence_has_clash": {"atol": 0.0, "rtol": 0.0},
+    "confidence_ranking_score": {"atol": 0.01, "rtol": 0.02},
+    "ranking_order": {"atol": 0.0, "rtol": 0.0}
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "tensors": {
+    "single_embeddings": {
+      "max_normalized_rmse": 0.05,
+      "min_cosine_similarity": 0.999
+    },
+    "pair_embeddings": {
+      "max_normalized_rmse": 0.05,
+      "min_cosine_similarity": 0.999
+    },
+    "diffusion_step_1": {"atol": 0.5, "rtol": 0.05},
+    "diffusion_step_100": {"atol": 0.5, "rtol": 0.05},
+    "diffusion_step_200": {"atol": 0.5, "rtol": 0.05},
+    "atom_positions": {"atol": 0.5, "rtol": 0.05},
+    "distogram_contact_probs": {"atol": 0.02, "rtol": 0.05},
+    "distogram_logits": {
+      "max_normalized_rmse": 0.02,
+      "min_cosine_similarity": 0.9999
+    },
+    "predicted_lddt": {"atol": 1.0, "rtol": 0.02},
+    "predicted_experimentally_resolved": {"atol": 0.02, "rtol": 0.05},
+    "full_pde": {"atol": 0.5, "rtol": 0.05},
+    "average_pde": {"atol": 0.5, "rtol": 0.05},
+    "full_pae": {"atol": 0.5, "rtol": 0.05},
+    "tmscore_adjusted_pae_global": {"atol": 0.02, "rtol": 0.05},
+    "tmscore_adjusted_pae_interface": {"atol": 0.02, "rtol": 0.05}
+  }
+}

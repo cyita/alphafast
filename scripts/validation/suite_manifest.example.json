@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "checks": [
+    {
+      "name": "e2e-parity",
+      "stage": "e2e",
+      "reference": "artifacts/jax.npz",
+      "candidate": "artifacts/torch.npz",
+      "tolerances": "module_fp32_tolerances.json"
+    },
+    {
+      "name": "sample-ranking",
+      "stage": "ranking",
+      "reference": "artifacts/jax_ranked.npz",
+      "candidate": "artifacts/torch_ranked.npz"
+    },
+    {
+      "name": "jax-ground-truth-accuracy",
+      "stage": "accuracy",
+      "tool": "../../nvidia_reproduction/score_accuracy.py",
+      "output_root": "artifacts/jax_predictions",
+      "ground_truth_root": "artifacts/ground_truth",
+      "profile": "full",
+      "result_file": "artifacts/jax_accuracy.json"
+    },
+    {
+      "name": "torch-ground-truth-accuracy",
+      "stage": "accuracy",
+      "tool": "../../nvidia_reproduction/score_accuracy.py",
+      "output_root": "artifacts/torch_predictions",
+      "ground_truth_root": "artifacts/ground_truth",
+      "profile": "full",
+      "result_file": "artifacts/torch_accuracy.json"
+    },
+    {
+      "name": "jax-torch-accuracy-delta",
+      "stage": "accuracy_delta",
+      "reference_report": "artifacts/jax_accuracy.json",
+      "candidate_report": "artifacts/torch_accuracy.json",
+      "tolerances": "accuracy_delta_tolerances.json"
+    }
+  ]
+}

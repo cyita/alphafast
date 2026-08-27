@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "cases": {
+    "nvidia_single_protein_1ubq": {
+      "ca_rmsd": {"direction": "lower", "max_regression": 0.5},
+      "ca_tm_score": {"direction": "higher", "max_regression": 0.02},
+      "ca_lddt": {"direction": "higher", "max_regression": 0.02},
+      "target_coverage": {"direction": "higher", "max_regression": 0.02}
+    },
+    "nvidia_protein_complex_1brs": {
+      "partner_ca_rmsd_after_receptor_fit": {"direction": "lower", "max_regression": 0.5},
+      "interface_contact_f1": {"direction": "higher", "max_regression": 0.05},
+      "target_coverage": {"direction": "higher", "max_regression": 0.02}
+    },
+    "nvidia_protein_ligand_3hs4": {
+      "ligand_rmsd": {"direction": "lower", "max_regression": 0.5},
+      "ion_distance": {"direction": "lower", "max_regression": 0.5},
+      "pocket_f1": {"direction": "higher", "max_regression": 0.05},
+      "target_coverage": {"direction": "higher", "max_regression": 0.02}
+    }
+  }
+}

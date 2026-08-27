@@ -1,0 +1,40 @@
+{
+  "tensors": {
+    "trunk_pass_1_single": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "trunk_pass_1_pair": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "trunk_pass_5_single": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "trunk_pass_5_pair": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "trunk_pass_11_single": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "trunk_pass_11_pair": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "pairformer_block_1_single": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "pairformer_block_1_pair": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "denoised_step_1": {
+      "max_normalized_rmse": 0.005,
+      "min_cosine_similarity": 0.99999
+    }
+  }
+}
