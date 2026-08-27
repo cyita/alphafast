@@ -196,6 +196,9 @@ class ValidateSuiteTest(unittest.TestCase):
         self.assertTrue(
             report["checks"][4]["summary"]["cases"][0]["top_sample_changed"]
         )
+        for check in report["checks"]:
+            self.assertTrue(Path(check["stdout_file"]).is_file())
+            self.assertTrue(Path(check["stderr_file"]).is_file())
 
     def test_suite_continues_after_a_failed_check(self) -> None:
         write_artifact(

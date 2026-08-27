@@ -1,5 +1,5 @@
 diff --git a/TorchFold_inference/torchfold/torchfold/alphafold3.py b/TorchFold_inference/torchfold/torchfold/alphafold3.py
-index 9c8f35c..9e760c4 100644
+index 9c8f35c..db02435 100644
 --- a/TorchFold_inference/torchfold/torchfold/alphafold3.py
 +++ b/TorchFold_inference/torchfold/torchfold/alphafold3.py
 @@ -189,12 +189,16 @@ class Evoformer(nn.Module):
@@ -167,15 +167,19 @@ index 9c8f35c..9e760c4 100644
          batch = feat_batch.Batch.from_data_dict(batch)
          num_res = batch.num_res
  
-@@ -461,18 +506,25 @@ class AlphaFold3(nn.Module):
+@@ -461,18 +506,29 @@ class AlphaFold3(nn.Module):
  
          t1 = time.time()
          rk = dist.get_rank() if USE_DIST else 0
-+        checkpoint_indices = (0, min(4, self.num_recycles), self.num_recycles)
++        num_trunk_passes = self.num_recycles
++        checkpoint_indices = (
++            (0, min(4, num_trunk_passes - 1), num_trunk_passes - 1)
++            if num_trunk_passes else ()
++        )
 +        trunk_checkpoints = {}
          # logger.info(f"rank {rk}: Start running Evoformer")
 -        for i in range(self.num_recycles):
-+        for i in range(self.num_recycles + 1):
++        for i in range(num_trunk_passes):
              embeddings = self.evoformer(
                  batch=batch,
                  prev=embeddings,
@@ -195,7 +199,7 @@ index 9c8f35c..9e760c4 100644
          t3 = time.time()
          # logger.info(f"Time taken for Diffusion: {t3 - t2:.4f}s")
  
-@@ -501,8 +553,22 @@ class AlphaFold3(nn.Module):
+@@ -501,8 +557,26 @@ class AlphaFold3(nn.Module):
          distogram = self.distogram_head(batch, embeddings)
          # logger.info(f"Time taken for Distogram: {time.time() - t4:.4f}s")
  
@@ -206,8 +210,12 @@ index 9c8f35c..9e760c4 100644
              **confidence_output,
          }
 +        if random_tape is not None:
++            output['num_trunk_passes'] = num_trunk_passes
++            output['trunk_checkpoint_passes'] = tuple(
++                index + 1 for index in checkpoint_indices)
 +            output['single_embeddings'] = embeddings['single']
 +            output['pair_embeddings'] = embeddings['pair']
++        if random_tape is not None and checkpoint_indices:
 +            output['trunk_single_checkpoints'] = torch.stack(
 +                [trunk_checkpoints[index][0] for index in checkpoint_indices])
 +            output['trunk_pair_checkpoints'] = torch.stack(
@@ -216,7 +224,7 @@ index 9c8f35c..9e760c4 100644
 +                'pairformer_block_1_single']
 +            output['pairformer_block_1_pair'] = embeddings[
 +                'pairformer_block_1_pair']
-+        else:
++        if random_tape is None:
 +            distogram.pop('distogram')
 +        return output
 diff --git a/TorchFold_inference/torchfold/torchfold/nn/diffusion_head.py b/TorchFold_inference/torchfold/torchfold/nn/diffusion_head.py

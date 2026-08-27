@@ -201,6 +201,10 @@ def main() -> int:
         completed = subprocess.run(
             command, capture_output=True, text=True, check=False
         )
+        stdout_file = check_dir / f"{index:03d}.stdout.log"
+        stderr_file = check_dir / f"{index:03d}.stderr.log"
+        stdout_file.write_text(completed.stdout)
+        stderr_file.write_text(completed.stderr)
         status = (
             "passed"
             if completed.returncode == 0
@@ -219,6 +223,8 @@ def main() -> int:
             "status": status,
             "exit_code": completed.returncode if status != "error" else 2,
             "result_file": str(result_file),
+            "stdout_file": str(stdout_file),
+            "stderr_file": str(stderr_file),
             "summary": compact_result(stage, detail),
         }
         if status != "passed":

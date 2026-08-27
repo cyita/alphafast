@@ -13,6 +13,8 @@ __pycache__/
 
 # Generated output data
 misc/
+src/alphafold3/constants/converters/ccd.pickle
+src/alphafold3/constants/converters/chemical_component_sets.pickle
 
 # OS
 .DS_Store
