@@ -90,6 +90,11 @@ def main() -> int:
         for name, parameter in model.named_parameters()
         if id(parameter) not in mapped_target_ids and name not in MANUAL_PARAMETERS
     )
+    named_parameters = dict(model.named_parameters())
+    manual_before = {
+        name: named_parameters[name].detach().clone()
+        for name in MANUAL_PARAMETERS
+    }
 
     shape_mismatches = []
     dtype_mismatches = []
@@ -130,6 +135,10 @@ def main() -> int:
         else:
             for name, target, expected in comparisons:
                 if not torch.equal(target.detach(), expected.to(target.device)):
+                    value_mismatches.append(name)
+            for name, before in manual_before.items():
+                loaded = named_parameters[name].detach()
+                if torch.equal(loaded, before) or not torch.all(torch.isfinite(loaded)):
                     value_mismatches.append(name)
 
     implementation_file = Path(inspect.getfile(AlphaFold3)).resolve()
