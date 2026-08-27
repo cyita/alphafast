@@ -86,15 +86,20 @@ class ModelRunner:
         """Loads model parameters and returns a jitted model forward pass."""
 
         @hk.transform
-        def forward_fn(batch):
-            return model.Model(self._model_config)(batch)
+        def forward_fn(batch, random_tape=None):
+            return model.Model(self._model_config)(
+                batch, random_tape=random_tape
+            )
 
         return functools.partial(
             jax.jit(forward_fn.apply, device=self._device), self.model_params
         )
 
     def run_inference(
-        self, featurised_example: features.BatchDict, rng_key: jnp.ndarray
+        self,
+        featurised_example: features.BatchDict,
+        rng_key: jnp.ndarray,
+        random_tape: dict[str, np.ndarray] | None = None,
     ) -> model.ModelResult:
         """Computes a forward pass of the model on a featurised example."""
         featurised_example = jax.device_put(
@@ -104,7 +109,13 @@ class ModelRunner:
             self._device,
         )
 
-        result = self._model(rng_key, featurised_example)
+        if random_tape is None:
+            result = self._model(rng_key, featurised_example)
+        else:
+            tape = jax.device_put(
+                jax.tree_util.tree_map(jnp.asarray, random_tape), self._device
+            )
+            result = self._model(rng_key, featurised_example, tape)
         result = jax.tree.map(np.asarray, result)
         result = jax.tree.map(
             lambda x: x.astype(jnp.float32) if x.dtype == jnp.bfloat16 else x,

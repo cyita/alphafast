@@ -241,6 +241,7 @@ class Model(hk.Module):
       embeddings: dict[str, jnp.ndarray],
       *,
       sample_config: diffusion_head.SampleConfig,
+      random_tape: Mapping[str, jnp.ndarray] | None = None,
   ) -> dict[str, jnp.ndarray]:
     denoising_step = functools.partial(
         self.diffusion_module,
@@ -254,11 +255,15 @@ class Model(hk.Module):
         batch=batch,
         key=hk.next_rng_key(),
         config=sample_config,
+        random_tape=random_tape,
     )
     return sample
 
   def __call__(
-      self, batch: features.BatchDict, key: jax.Array | None = None
+      self,
+      batch: features.BatchDict,
+      key: jax.Array | None = None,
+      random_tape: Mapping[str, jnp.ndarray] | None = None,
   ) -> ModelResult:
     if key is None:
       key = hk.next_rng_key()
@@ -274,7 +279,7 @@ class Model(hk.Module):
         global_config=self.global_config,
     )
 
-    def recycle_body(_, args):
+    def recycle_body(recycle_index, args):
       prev, key = args
       key, subkey = jax.random.split(key)
       embeddings = embedding_module(
@@ -282,9 +287,22 @@ class Model(hk.Module):
           prev=prev,
           target_feat=target_feat,
           key=subkey,
+          msa_row_order=(
+              None
+              if random_tape is None
+              else random_tape['msa_row_order'][recycle_index]
+          ),
+          capture_pairformer=random_tape is not None,
       )
       embeddings['pair'] = embeddings['pair'].astype(jnp.float32)
       embeddings['single'] = embeddings['single'].astype(jnp.float32)
+      if random_tape is not None:
+        embeddings['pairformer_block_1_pair'] = embeddings[
+            'pairformer_block_1_pair'
+        ].astype(jnp.float32)
+        embeddings['pairformer_block_1_single'] = embeddings[
+            'pairformer_block_1_single'
+        ].astype(jnp.float32)
       return embeddings, key
 
     num_res = batch.num_res
@@ -299,17 +317,82 @@ class Model(hk.Module):
         ),
         'target_feat': target_feat,
     }
+    if random_tape is not None:
+      embeddings['pairformer_block_1_pair'] = jnp.zeros_like(embeddings['pair'])
+      embeddings['pairformer_block_1_single'] = jnp.zeros_like(
+          embeddings['single']
+      )
+    trunk_single_checkpoints = None
+    trunk_pair_checkpoints = None
     if hk.running_init():
-      embeddings, _ = recycle_body(None, (embeddings, key))
+      embeddings, _ = recycle_body(0, (embeddings, key))
     else:
       # Number of recycles is number of additional forward trunk passes.
       num_iter = self.config.num_recycles + 1
-      embeddings, _ = hk.fori_loop(0, num_iter, recycle_body, (embeddings, key))
+      if random_tape is None:
+        embeddings, _ = hk.fori_loop(
+            0, num_iter, recycle_body, (embeddings, key)
+        )
+      else:
+        checkpoint_indices = jnp.asarray([0, min(4, num_iter - 1), num_iter - 1])
+        trunk_single_checkpoints = jnp.zeros(
+            (3,) + embeddings['single'].shape, dtype=jnp.float32
+        )
+        trunk_pair_checkpoints = jnp.zeros(
+            (3,) + embeddings['pair'].shape, dtype=jnp.float32
+        )
+
+        def captured_recycle_body(recycle_index, args):
+          prev, recycle_key, single_checkpoints, pair_checkpoints = args
+          next_embeddings, recycle_key = recycle_body(
+              recycle_index, (prev, recycle_key)
+          )
+          for slot in range(3):
+            single_checkpoints = jax.lax.cond(
+                checkpoint_indices[slot] == recycle_index,
+                lambda checkpoints: checkpoints.at[slot].set(
+                    next_embeddings['single']
+                ),
+                lambda checkpoints: checkpoints,
+                single_checkpoints,
+            )
+            pair_checkpoints = jax.lax.cond(
+                checkpoint_indices[slot] == recycle_index,
+                lambda checkpoints: checkpoints.at[slot].set(
+                    next_embeddings['pair']
+                ),
+                lambda checkpoints: checkpoints,
+                pair_checkpoints,
+            )
+          return (
+              next_embeddings,
+              recycle_key,
+              single_checkpoints,
+              pair_checkpoints,
+          )
+
+        (
+            embeddings,
+            _,
+            trunk_single_checkpoints,
+            trunk_pair_checkpoints,
+        ) = hk.fori_loop(
+            0,
+            num_iter,
+            captured_recycle_body,
+            (
+                embeddings,
+                key,
+                trunk_single_checkpoints,
+                trunk_pair_checkpoints,
+            ),
+        )
 
     samples = self._sample_diffusion(
         batch,
         embeddings,
         sample_config=self.config.heads.diffusion.eval,
+        random_tape=random_tape,
     )
 
     # Compute dist_error_fn over all samples for distance error logging.
@@ -338,6 +421,13 @@ class Model(hk.Module):
     if self.config.return_embeddings:
       output['single_embeddings'] = embeddings['single']
       output['pair_embeddings'] = embeddings['pair']
+    if random_tape is not None and trunk_single_checkpoints is not None:
+      output['trunk_single_checkpoints'] = trunk_single_checkpoints
+      output['trunk_pair_checkpoints'] = trunk_pair_checkpoints
+      output['pairformer_block_1_single'] = embeddings[
+          'pairformer_block_1_single'
+      ]
+      output['pairformer_block_1_pair'] = embeddings['pairformer_block_1_pair']
     return output
 
   @classmethod

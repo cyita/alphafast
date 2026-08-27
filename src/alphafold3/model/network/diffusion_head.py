@@ -10,7 +10,7 @@
 
 """Diffusion Head."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 from alphafold3.common import base_config
 from alphafold3.model import feat_batch
@@ -30,10 +30,10 @@ import jax.numpy as jnp
 SIGMA_DATA = 16.0
 
 
-def random_rotation(key):
+def rotation_from_noise(noise: jnp.ndarray) -> jnp.ndarray:
   # Create a random rotation (Gram-Schmidt orthogonalization of two
   # random normal vectors)
-  v0, v1 = jax.random.normal(key, shape=(2, 3))
+  v0, v1 = noise
   e0 = v0 / jnp.maximum(1e-10, jnp.linalg.norm(v0))
   v1 = v1 - e0 * jnp.dot(v1, e0, precision=jax.lax.Precision.HIGHEST)
   e1 = v1 / jnp.maximum(1e-10, jnp.linalg.norm(v1))
@@ -41,10 +41,16 @@ def random_rotation(key):
   return jnp.stack([e0, e1, e2])
 
 
+def random_rotation(key):
+  return rotation_from_noise(jax.random.normal(key, shape=(2, 3)))
+
+
 def random_augmentation(
-    rng_key: jnp.ndarray,
+    rng_key: jnp.ndarray | None,
     positions: jnp.ndarray,
     mask: jnp.ndarray,
+    rotation_noise: jnp.ndarray | None = None,
+    translation_noise: jnp.ndarray | None = None,
 ) -> jnp.ndarray:
   """Apply random rigid augmentation.
 
@@ -56,13 +62,16 @@ def random_augmentation(
   Returns:
     Transformed positions with the same shape as input positions.
   """
-  rotation_key, translation_key = jax.random.split(rng_key)
-
   center = utils.mask_mean(
       mask[..., None], positions, axis=(-2, -3), keepdims=True, eps=1e-6
   )
-  rot = random_rotation(rotation_key)
-  translation = jax.random.normal(translation_key, shape=(3,))
+  if rotation_noise is None:
+    rotation_key, translation_key = jax.random.split(rng_key)
+    rot = random_rotation(rotation_key)
+    translation = jax.random.normal(translation_key, shape=(3,))
+  else:
+    rot = rotation_from_noise(rotation_noise)
+    translation = translation_noise
 
   augmented_positions = (
       jnp.einsum(
@@ -299,6 +308,7 @@ def sample(
     batch: feat_batch.Batch,
     key: jnp.ndarray,
     config: SampleConfig,
+    random_tape: Mapping[str, jnp.ndarray] | None = None,
 ) -> dict[str, jnp.ndarray]:
   """Sample using denoiser on batch.
 
@@ -347,6 +357,75 @@ def sample(
   num_samples = config.num_samples
 
   noise_levels = noise_schedule(jnp.linspace(0, 1, config.steps + 1))
+
+  if random_tape is not None:
+    def apply_taped_denoising_step(carry, step_inputs):
+      positions, noise_level_prev, first_denoised = carry
+      (
+          step_index,
+          noise_level,
+          rotation_noise,
+          translation_noise,
+          standard_noise,
+      ) = step_inputs
+      positions = random_augmentation(
+          rng_key=None,
+          positions=positions,
+          mask=mask,
+          rotation_noise=rotation_noise,
+          translation_noise=translation_noise,
+      )
+
+      gamma = config.gamma_0 * (noise_level > config.gamma_min)
+      t_hat = noise_level_prev * (1 + gamma)
+      noise_scale = config.noise_scale * jnp.sqrt(
+          t_hat**2 - noise_level_prev**2
+      )
+      positions_noisy = positions + noise_scale * standard_noise
+      positions_denoised = denoising_step(positions_noisy, t_hat)
+      first_denoised = jax.lax.cond(
+          step_index == 0,
+          lambda _: positions_denoised,
+          lambda _: first_denoised,
+          operand=None,
+      )
+      grad = (positions_noisy - positions_denoised) / t_hat
+      positions_out = positions_noisy + config.step_scale * (
+          noise_level - t_hat
+      ) * grad
+      return (positions_out, noise_level, first_denoised), positions_out
+
+    positions = random_tape['initial_positions_noise'] * noise_levels[0]
+    init = (
+        positions,
+        jnp.tile(noise_levels[None, 0], (num_samples,)),
+        jnp.zeros_like(positions),
+    )
+    apply_taped_denoising_step = hk.vmap(
+        apply_taped_denoising_step,
+        in_axes=(0, (None, None, 0, 0, 0)),
+        split_rng=(not hk.running_init()),
+    )
+    result, trajectory = hk.scan(
+        apply_taped_denoising_step,
+        init,
+        (
+            jnp.arange(config.steps),
+            noise_levels[1:],
+            random_tape['rotation_noise'],
+            random_tape['translation_noise'],
+            random_tape['diffusion_noise'],
+        ),
+        unroll=4,
+    )
+    positions_out, _, first_denoised = result
+    final_dense_atom_mask = jnp.tile(mask[None], (num_samples, 1, 1))
+    return {
+        'atom_positions': positions_out,
+        'mask': final_dense_atom_mask,
+        'trajectory': trajectory,
+        'denoised_step_1': first_denoised,
+    }
 
   key, noise_key = jax.random.split(key)
   positions = jax.random.normal(noise_key, (num_samples,) + mask.shape + (3,))

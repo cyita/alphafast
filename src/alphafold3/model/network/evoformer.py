@@ -204,10 +204,14 @@ class Evoformer(hk.Module):
       pair_mask: jnp.ndarray,
       key: jnp.ndarray,
       target_feat: jnp.ndarray,
+      msa_row_order: jnp.ndarray | None = None,
   ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Processes MSA and returns updated pair activations."""
     dtype = pair_activations.dtype
-    msa_batch, key = featurization.shuffle_msa(key, msa_batch)
+    if msa_row_order is None:
+      msa_batch, key = featurization.shuffle_msa(key, msa_batch)
+    else:
+      msa_batch = msa_batch.index_msa_rows(msa_row_order)
     msa_batch = featurization.truncate_msa_batch(msa_batch, self.config.num_msa)
     msa_feat = featurization.create_msa_feat(msa_batch).astype(dtype)
 
@@ -246,6 +250,8 @@ class Evoformer(hk.Module):
       prev: dict[str, jnp.ndarray],
       target_feat: jnp.ndarray,
       key: jnp.ndarray,
+      msa_row_order: jnp.ndarray | None = None,
+      capture_pairformer: bool = False,
   ) -> dict[str, jnp.ndarray]:
 
     assert self.global_config.bfloat16 in {'all', 'none'}
@@ -290,6 +296,7 @@ class Evoformer(hk.Module):
           pair_mask=pair_mask,
           key=key,
           target_feat=target_feat,
+          msa_row_order=msa_row_order,
       )
       del key  # Unused after this point.
 
@@ -322,13 +329,62 @@ class Evoformer(hk.Module):
             seq_mask=batch.token_features.mask.astype(dtype),
         )
 
-      pairformer_stack = hk.experimental.layer_stack(
-          self.config.pairformer.num_layer
-      )(pairformer_fn)
+      if capture_pairformer:
 
-      pair_activations, single_activations = pairformer_stack(
-          (pair_activations, single_activations)
-      )
+        def pairformer_fn_with_checkpoint(x):
+          (
+              pair_act,
+              single_act,
+              layer_index,
+              checkpoint_pair,
+              checkpoint_single,
+          ) = x
+          next_pair, next_single = pairformer_fn((pair_act, single_act))
+          checkpoint_pair = jax.lax.cond(
+              layer_index == 0,
+              lambda _: next_pair,
+              lambda _: checkpoint_pair,
+              operand=None,
+          )
+          checkpoint_single = jax.lax.cond(
+              layer_index == 0,
+              lambda _: next_single,
+              lambda _: checkpoint_single,
+              operand=None,
+          )
+          return (
+              next_pair,
+              next_single,
+              layer_index + 1,
+              checkpoint_pair,
+              checkpoint_single,
+          )
+
+        pairformer_stack = hk.experimental.layer_stack(
+            self.config.pairformer.num_layer
+        )(pairformer_fn_with_checkpoint)
+        (
+            pair_activations,
+            single_activations,
+            _,
+            pairformer_checkpoint_pair,
+            pairformer_checkpoint_single,
+        ) = pairformer_stack(
+            (
+                pair_activations,
+                single_activations,
+                jnp.asarray(0),
+                jnp.zeros_like(pair_activations),
+                jnp.zeros_like(single_activations),
+            )
+        )
+      else:
+        pairformer_stack = hk.experimental.layer_stack(
+            self.config.pairformer.num_layer
+        )(pairformer_fn)
+        pair_activations, single_activations = pairformer_stack(
+            (pair_activations, single_activations)
+        )
 
       assert pair_activations.shape == (
           num_residues,
@@ -343,5 +399,8 @@ class Evoformer(hk.Module):
           'pair': pair_activations,
           'target_feat': target_feat,
       }
+      if capture_pairformer:
+        output['pairformer_block_1_pair'] = pairformer_checkpoint_pair
+        output['pairformer_block_1_single'] = pairformer_checkpoint_single
 
     return output
