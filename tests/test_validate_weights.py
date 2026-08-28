@@ -121,6 +121,46 @@ class ValidateWeightsTest(unittest.TestCase):
             result["reason"], "1 target parameter(s) have no source weight"
         )
 
+    def test_allows_bfloat16_source_upcast_to_float32(self) -> None:
+        write_mapping_report(
+            self.mapping_report,
+            self.weights,
+            dtype_mismatches=[{
+                "source": "scope/weights",
+                "source_dtype": "torch.bfloat16",
+                "target_dtype": "torch.float32",
+            }],
+        )
+
+        completed = self.run_validator()
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result = json.loads(self.result.read_text())
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["metrics"]["dtype_mismatches_count"], 1)
+        self.assertEqual(result["metrics"]["safe_dtype_upcasts_count"], 1)
+        self.assertEqual(result["metrics"]["unsafe_dtype_mismatches_count"], 0)
+
+    def test_fails_for_unsafe_dtype_mismatch(self) -> None:
+        write_mapping_report(
+            self.mapping_report,
+            self.weights,
+            dtype_mismatches=[{
+                "source": "scope/weights",
+                "source_dtype": "torch.float32",
+                "target_dtype": "torch.bfloat16",
+            }],
+        )
+
+        completed = self.run_validator()
+
+        self.assertEqual(completed.returncode, 1)
+        result = json.loads(self.result.read_text())
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["metrics"]["safe_dtype_upcasts_count"], 0)
+        self.assertEqual(result["metrics"]["unsafe_dtype_mismatches_count"], 1)
+        self.assertEqual(result["reason"], "1 unsafe dtype mismatch(es)")
+
     def test_reports_invalid_weight_stream_as_error(self) -> None:
         self.weights.write_bytes(b"not a weight record")
         write_mapping_report(self.mapping_report, self.weights)

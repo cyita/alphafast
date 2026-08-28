@@ -3,7 +3,8 @@
 
 The mapping report must contain source_sha256, records_total, records_mapped,
 source_records_without_target, target_parameters_without_source,
-shape_mismatches, dtype_mismatches, and value_mismatches.
+shape_mismatches, dtype_mismatches, and value_mismatches. BF16 source weights
+may be losslessly upcast to FP32 target parameters.
 """
 
 from __future__ import annotations
@@ -25,9 +26,9 @@ ISSUE_FIELDS = {
     "source_records_without_target": "source record(s) have no target parameter",
     "target_parameters_without_source": "target parameter(s) have no source weight",
     "shape_mismatches": "shape mismatch(es)",
-    "dtype_mismatches": "dtype mismatch(es)",
     "value_mismatches": "value mismatch(es)",
 }
+SAFE_DTYPE_UPCASTS = {("torch.bfloat16", "torch.float32")}
 
 
 class WeightFormatError(Exception):
@@ -182,10 +183,32 @@ def validate_mapping(
             if issues:
                 failures.append(f"{len(issues)} {description}")
 
+    dtype_mismatches = report.get("dtype_mismatches")
+    if not isinstance(dtype_mismatches, list):
+        failures.append("dtype_mismatches must be a list")
+        issue_counts["dtype_mismatches"] = None
+        safe_dtype_upcasts: Optional[int] = None
+        unsafe_dtype_mismatches: Optional[int] = None
+    else:
+        safe_dtype_upcasts = sum(
+            isinstance(issue, dict)
+            and (issue.get("source_dtype"), issue.get("target_dtype"))
+            in SAFE_DTYPE_UPCASTS
+            for issue in dtype_mismatches
+        )
+        unsafe_dtype_mismatches = len(dtype_mismatches) - safe_dtype_upcasts
+        issue_counts["dtype_mismatches"] = len(dtype_mismatches)
+        if unsafe_dtype_mismatches:
+            failures.append(
+                f"{unsafe_dtype_mismatches} unsafe dtype mismatch(es)"
+            )
+
     metrics: dict[str, object] = {
         "source_records": source_records,
         "mapped_records": report_mapped,
         **{f"{field}_count": count for field, count in issue_counts.items()},
+        "safe_dtype_upcasts_count": safe_dtype_upcasts,
+        "unsafe_dtype_mismatches_count": unsafe_dtype_mismatches,
     }
     return failures, metrics
 
@@ -247,13 +270,17 @@ def main() -> int:
     metrics["tensor_bytes"] = tensor_bytes
 
     status = "failed" if failures else "passed"
+    safe_upcasts = metrics.get("safe_dtype_upcasts_count")
+    passed_reason = "all weights mapped"
+    if safe_upcasts:
+        passed_reason += f"; {safe_upcasts} safe BF16-to-FP32 upcast(s)"
     result = {
         "stage": "weight",
         "status": status,
         "source": source,
         "mapping_report": str(args.mapping_report),
         "metrics": metrics,
-        "reason": "; ".join(failures) if failures else "all weights mapped",
+        "reason": "; ".join(failures) if failures else passed_reason,
     }
     write_result(args.result_file, result)
 
