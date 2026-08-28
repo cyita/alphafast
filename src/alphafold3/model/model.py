@@ -334,12 +334,11 @@ class Model(hk.Module):
             0, num_iter, recycle_body, (embeddings, key)
         )
       else:
-        checkpoint_indices = jnp.asarray([0, min(4, num_iter - 1), num_iter - 1])
         trunk_single_checkpoints = jnp.zeros(
-            (3,) + embeddings['single'].shape, dtype=jnp.float32
+            (num_iter,) + embeddings['single'].shape, dtype=jnp.float32
         )
         trunk_pair_checkpoints = jnp.zeros(
-            (3,) + embeddings['pair'].shape, dtype=jnp.float32
+            (num_iter,) + embeddings['pair'].shape, dtype=jnp.float32
         )
 
         def captured_recycle_body(recycle_index, args):
@@ -347,23 +346,12 @@ class Model(hk.Module):
           next_embeddings, recycle_key = recycle_body(
               recycle_index, (prev, recycle_key)
           )
-          for slot in range(3):
-            single_checkpoints = jax.lax.cond(
-                checkpoint_indices[slot] == recycle_index,
-                lambda checkpoints: checkpoints.at[slot].set(
-                    next_embeddings['single']
-                ),
-                lambda checkpoints: checkpoints,
-                single_checkpoints,
-            )
-            pair_checkpoints = jax.lax.cond(
-                checkpoint_indices[slot] == recycle_index,
-                lambda checkpoints: checkpoints.at[slot].set(
-                    next_embeddings['pair']
-                ),
-                lambda checkpoints: checkpoints,
-                pair_checkpoints,
-            )
+          single_checkpoints = single_checkpoints.at[recycle_index].set(
+              next_embeddings['single']
+          )
+          pair_checkpoints = pair_checkpoints.at[recycle_index].set(
+              next_embeddings['pair']
+          )
           return (
               next_embeddings,
               recycle_key,

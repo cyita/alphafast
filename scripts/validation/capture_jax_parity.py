@@ -48,7 +48,7 @@ def checkpoint_arrays(
         "pairformer_block_1_pair": np.asarray(result["pairformer_block_1_pair"]),
         "denoised_step_1": np.asarray(diffusion["denoised_step_1"]),
     }
-    checkpoint_passes = (1, min(5, num_trunk_passes), num_trunk_passes)
+    checkpoint_passes = range(1, num_trunk_passes + 1)
     for index, trunk_pass in enumerate(checkpoint_passes):
         arrays[f"trunk_pass_{trunk_pass}_single"] = np.asarray(
             result["trunk_single_checkpoints"][index]

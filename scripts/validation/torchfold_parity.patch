@@ -172,10 +172,7 @@ index 9c8f35c..db02435 100644
          t1 = time.time()
          rk = dist.get_rank() if USE_DIST else 0
 +        num_trunk_passes = self.num_recycles
-+        checkpoint_indices = (
-+            (0, min(4, num_trunk_passes - 1), num_trunk_passes - 1)
-+            if num_trunk_passes else ()
-+        )
++        checkpoint_indices = tuple(range(num_trunk_passes))
 +        trunk_checkpoints = {}
          # logger.info(f"rank {rk}: Start running Evoformer")
 -        for i in range(self.num_recycles):
