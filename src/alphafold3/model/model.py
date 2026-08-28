@@ -297,12 +297,17 @@ class Model(hk.Module):
       embeddings['pair'] = embeddings['pair'].astype(jnp.float32)
       embeddings['single'] = embeddings['single'].astype(jnp.float32)
       if random_tape is not None:
-        embeddings['pairformer_block_1_pair'] = embeddings[
-            'pairformer_block_1_pair'
-        ].astype(jnp.float32)
-        embeddings['pairformer_block_1_single'] = embeddings[
-            'pairformer_block_1_single'
-        ].astype(jnp.float32)
+        for checkpoint_name in (
+            'pairformer_pre_pair',
+            'pairformer_pre_single',
+            'pairformer_block_1_pair',
+            'pairformer_block_1_single',
+            'pairformer_block_24_pair',
+            'pairformer_block_24_single',
+        ):
+          embeddings[checkpoint_name] = embeddings[checkpoint_name].astype(
+              jnp.float32
+          )
       return embeddings, key
 
     num_res = batch.num_res
@@ -318,10 +323,18 @@ class Model(hk.Module):
         'target_feat': target_feat,
     }
     if random_tape is not None:
-      embeddings['pairformer_block_1_pair'] = jnp.zeros_like(embeddings['pair'])
-      embeddings['pairformer_block_1_single'] = jnp.zeros_like(
-          embeddings['single']
-      )
+      for checkpoint_name in (
+          'pairformer_pre_pair',
+          'pairformer_block_1_pair',
+          'pairformer_block_24_pair',
+      ):
+        embeddings[checkpoint_name] = jnp.zeros_like(embeddings['pair'])
+      for checkpoint_name in (
+          'pairformer_pre_single',
+          'pairformer_block_1_single',
+          'pairformer_block_24_single',
+      ):
+        embeddings[checkpoint_name] = jnp.zeros_like(embeddings['single'])
     trunk_single_checkpoints = None
     trunk_pair_checkpoints = None
     if hk.running_init():
@@ -340,9 +353,26 @@ class Model(hk.Module):
         trunk_pair_checkpoints = jnp.zeros(
             (num_iter,) + embeddings['pair'].shape, dtype=jnp.float32
         )
+        pass_6_detail = tuple(
+            embeddings[name]
+            for name in (
+                'pairformer_pre_single',
+                'pairformer_pre_pair',
+                'pairformer_block_1_single',
+                'pairformer_block_1_pair',
+                'pairformer_block_24_single',
+                'pairformer_block_24_pair',
+            )
+        )
 
         def captured_recycle_body(recycle_index, args):
-          prev, recycle_key, single_checkpoints, pair_checkpoints = args
+          (
+              prev,
+              recycle_key,
+              single_checkpoints,
+              pair_checkpoints,
+              pass_6_detail,
+          ) = args
           next_embeddings, recycle_key = recycle_body(
               recycle_index, (prev, recycle_key)
           )
@@ -352,11 +382,29 @@ class Model(hk.Module):
           pair_checkpoints = pair_checkpoints.at[recycle_index].set(
               next_embeddings['pair']
           )
+          current_detail = tuple(
+              next_embeddings[name]
+              for name in (
+                  'pairformer_pre_single',
+                  'pairformer_pre_pair',
+                  'pairformer_block_1_single',
+                  'pairformer_block_1_pair',
+                  'pairformer_block_24_single',
+                  'pairformer_block_24_pair',
+              )
+          )
+          pass_6_detail = jax.lax.cond(
+              recycle_index == 5,
+              lambda _: current_detail,
+              lambda _: pass_6_detail,
+              operand=None,
+          )
           return (
               next_embeddings,
               recycle_key,
               single_checkpoints,
               pair_checkpoints,
+              pass_6_detail,
           )
 
         (
@@ -364,6 +412,7 @@ class Model(hk.Module):
             _,
             trunk_single_checkpoints,
             trunk_pair_checkpoints,
+            pass_6_detail,
         ) = hk.fori_loop(
             0,
             num_iter,
@@ -373,6 +422,7 @@ class Model(hk.Module):
                 key,
                 trunk_single_checkpoints,
                 trunk_pair_checkpoints,
+                pass_6_detail,
             ),
         )
 
@@ -416,6 +466,19 @@ class Model(hk.Module):
           'pairformer_block_1_single'
       ]
       output['pairformer_block_1_pair'] = embeddings['pairformer_block_1_pair']
+      for name, value in zip(
+          (
+              'trunk_pass_6_pre_pairformer_single',
+              'trunk_pass_6_pre_pairformer_pair',
+              'trunk_pass_6_pairformer_block_1_single',
+              'trunk_pass_6_pairformer_block_1_pair',
+              'trunk_pass_6_pairformer_block_24_single',
+              'trunk_pass_6_pairformer_block_24_pair',
+          ),
+          pass_6_detail,
+          strict=True,
+      ):
+        output[name] = value
     return output
 
   @classmethod

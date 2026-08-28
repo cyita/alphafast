@@ -55,6 +55,16 @@ def checkpoint_arrays(
     for name in ("pairformer_block_1_single", "pairformer_block_1_pair"):
         if name in result:
             arrays[name] = to_numpy(result[name])
+    for name in (
+        "trunk_pass_6_pre_pairformer_single",
+        "trunk_pass_6_pre_pairformer_pair",
+        "trunk_pass_6_pairformer_block_1_single",
+        "trunk_pass_6_pairformer_block_1_pair",
+        "trunk_pass_6_pairformer_block_24_single",
+        "trunk_pass_6_pairformer_block_24_pair",
+    ):
+        if name in result:
+            arrays[name] = to_numpy(result[name])
 
     checkpoint_passes = result["trunk_checkpoint_passes"]
     for index, trunk_pass in enumerate(checkpoint_passes):

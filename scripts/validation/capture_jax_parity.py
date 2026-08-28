@@ -56,6 +56,15 @@ def checkpoint_arrays(
         arrays[f"trunk_pass_{trunk_pass}_pair"] = np.asarray(
             result["trunk_pair_checkpoints"][index]
         )
+    for name in (
+        "trunk_pass_6_pre_pairformer_single",
+        "trunk_pass_6_pre_pairformer_pair",
+        "trunk_pass_6_pairformer_block_1_single",
+        "trunk_pass_6_pairformer_block_1_pair",
+        "trunk_pass_6_pairformer_block_24_single",
+        "trunk_pass_6_pairformer_block_24_pair",
+    ):
+        arrays[name] = np.asarray(result[name])
     trajectory = np.asarray(diffusion["trajectory"])
     for step in (0, steps // 2 - 1, steps - 1):
         arrays[f"diffusion_step_{step + 1}"] = trajectory[step]

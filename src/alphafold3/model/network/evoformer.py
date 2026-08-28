@@ -314,6 +314,10 @@ class Evoformer(hk.Module):
           )
       )
 
+      if capture_pairformer:
+        pairformer_pre_pair = pair_activations
+        pairformer_pre_single = single_activations
+
       def pairformer_fn(x):
         pairformer_iteration = modules.PairFormerIteration(
             self.config.pairformer,
@@ -336,28 +340,44 @@ class Evoformer(hk.Module):
               pair_act,
               single_act,
               layer_index,
-              checkpoint_pair,
-              checkpoint_single,
+              block_1_pair,
+              block_1_single,
+              block_24_pair,
+              block_24_single,
           ) = x
           next_pair, next_single = pairformer_fn((pair_act, single_act))
-          checkpoint_pair = jax.lax.cond(
+          block_1_pair = jax.lax.cond(
               layer_index == 0,
               lambda _: next_pair,
-              lambda _: checkpoint_pair,
+              lambda _: block_1_pair,
               operand=None,
           )
-          checkpoint_single = jax.lax.cond(
+          block_1_single = jax.lax.cond(
               layer_index == 0,
               lambda _: next_single,
-              lambda _: checkpoint_single,
+              lambda _: block_1_single,
+              operand=None,
+          )
+          block_24_pair = jax.lax.cond(
+              layer_index == 23,
+              lambda _: next_pair,
+              lambda _: block_24_pair,
+              operand=None,
+          )
+          block_24_single = jax.lax.cond(
+              layer_index == 23,
+              lambda _: next_single,
+              lambda _: block_24_single,
               operand=None,
           )
           return (
               next_pair,
               next_single,
               layer_index + 1,
-              checkpoint_pair,
-              checkpoint_single,
+              block_1_pair,
+              block_1_single,
+              block_24_pair,
+              block_24_single,
           )
 
         pairformer_stack = hk.experimental.layer_stack(
@@ -367,13 +387,17 @@ class Evoformer(hk.Module):
             pair_activations,
             single_activations,
             _,
-            pairformer_checkpoint_pair,
-            pairformer_checkpoint_single,
+            pairformer_block_1_pair,
+            pairformer_block_1_single,
+            pairformer_block_24_pair,
+            pairformer_block_24_single,
         ) = pairformer_stack(
             (
                 pair_activations,
                 single_activations,
                 jnp.asarray(0),
+                jnp.zeros_like(pair_activations),
+                jnp.zeros_like(single_activations),
                 jnp.zeros_like(pair_activations),
                 jnp.zeros_like(single_activations),
             )
@@ -400,7 +424,11 @@ class Evoformer(hk.Module):
           'target_feat': target_feat,
       }
       if capture_pairformer:
-        output['pairformer_block_1_pair'] = pairformer_checkpoint_pair
-        output['pairformer_block_1_single'] = pairformer_checkpoint_single
+        output['pairformer_pre_pair'] = pairformer_pre_pair
+        output['pairformer_pre_single'] = pairformer_pre_single
+        output['pairformer_block_1_pair'] = pairformer_block_1_pair
+        output['pairformer_block_1_single'] = pairformer_block_1_single
+        output['pairformer_block_24_pair'] = pairformer_block_24_pair
+        output['pairformer_block_24_single'] = pairformer_block_24_single
 
     return output
