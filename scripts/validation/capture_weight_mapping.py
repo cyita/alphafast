@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Load official AF3 weights into TorchFold and report the actual mapping."""
+"""Load official AF3 weights into a Torch implementation and report mapping."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ import inspect
 import json
 from pathlib import Path
 import subprocess
+
+import numpy as np
 
 
 META_KEY = "__meta__/__identifier__"
@@ -22,6 +24,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--weights-file", type=Path, required=True)
     parser.add_argument("--output-file", type=Path, required=True)
+    parser.add_argument(
+        "--implementation",
+        choices=("torchfold", "xfold"),
+        default="torchfold",
+        help="Torch implementation to inspect (default: torchfold)",
+    )
     return parser.parse_args()
 
 
@@ -65,14 +73,18 @@ def git_commit(source_file: Path) -> str:
 def main() -> int:
     args = parse_args()
     import torch
-    from torchfold.alphafold3 import AlphaFold3
-    from torchfold import params as torchfold_params
+    if args.implementation == "xfold":
+        from xfold.alphafold3 import AlphaFold3
+        from xfold import params as implementation_params
+    else:
+        from torchfold.alphafold3 import AlphaFold3
+        from torchfold import params as implementation_params
 
     weights_file = args.weights_file.resolve()
-    source = torchfold_params.get_alphafold3_params(weights_file)
+    source = implementation_params.get_alphafold3_params(weights_file)
     model = AlphaFold3()
-    mappings = torchfold_params._process_translations_dict(
-        torchfold_params.get_translation_dict(model),
+    mappings = implementation_params._process_translations_dict(
+        implementation_params.get_translation_dict(model),
         _key_prefix="diffuser/",
     )
 
@@ -94,6 +106,7 @@ def main() -> int:
     manual_before = {
         name: named_parameters[name].detach().clone()
         for name in MANUAL_PARAMETERS
+        if name in named_parameters
     }
 
     shape_mismatches = []
@@ -117,29 +130,43 @@ def main() -> int:
                     "source_shape": list(value.shape),
                     "target_shape": list(target.shape),
                 })
-            elif target.dtype != value.dtype:
-                dtype_mismatches.append({
-                    "source": key + suffix,
-                    "source_dtype": str(value.dtype),
-                    "target_dtype": str(target.dtype),
-                })
             else:
+                if target.dtype != value.dtype:
+                    dtype_mismatches.append({
+                        "source": key + suffix,
+                        "source_dtype": str(value.dtype),
+                        "target_dtype": str(target.dtype),
+                    })
                 comparisons.append((key + suffix, target, value))
 
     value_mismatches = []
-    if not shape_mismatches and not dtype_mismatches:
+    if not shape_mismatches:
         try:
-            torchfold_params.import_jax_weights_(model, weights_file.parent)
+            implementation_params.import_jax_weights_(model, weights_file.parent)
         except Exception as error:
             value_mismatches.append({"loader_error": str(error)})
         else:
             for name, target, expected in comparisons:
-                if not torch.equal(target.detach(), expected.to(target.device)):
+                expected = expected.to(
+                    device=target.device, dtype=target.dtype
+                )
+                if not torch.equal(target.detach(), expected):
                     value_mismatches.append(name)
             for name, before in manual_before.items():
                 loaded = named_parameters[name].detach()
                 if torch.equal(loaded, before) or not torch.all(torch.isfinite(loaded)):
                     value_mismatches.append(name)
+            if args.implementation == "xfold":
+                fourier_embeddings = model.diffusion_head.fourier_embeddings
+                for name in ("weight", "bias"):
+                    loaded = getattr(fourier_embeddings, name).detach().cpu()
+                    expected = torch.from_numpy(
+                        np.load(weights_file.parent / f"fourier_{name}.npy")
+                    )
+                    if not torch.equal(loaded, expected):
+                        value_mismatches.append(
+                            f"diffusion_head.fourier_embeddings.{name}"
+                        )
 
     implementation_file = Path(inspect.getfile(AlphaFold3)).resolve()
     report = {
@@ -152,6 +179,7 @@ def main() -> int:
         "dtype_mismatches": dtype_mismatches,
         "value_mismatches": value_mismatches,
         "implementation": {
+            "name": args.implementation,
             "file": str(implementation_file),
             "commit": git_commit(implementation_file),
             "torch_parameters": len(list(model.named_parameters())),
