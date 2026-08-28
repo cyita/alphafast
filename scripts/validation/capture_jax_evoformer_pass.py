@@ -74,7 +74,7 @@ def main() -> int:
             ),
             "target_feat": target_feat,
         }
-        return embedding_module(
+        embeddings = embedding_module(
             batch=batch,
             prev=prev,
             target_feat=target_feat,
@@ -82,6 +82,7 @@ def main() -> int:
             msa_row_order=msa_row_order,
             capture_pairformer=True,
         )
+        return target_feat, embeddings
 
     params = model_params.get_model_haiku_params(model_dir=args.model_dir)
     batch = jax.device_put(
@@ -89,7 +90,7 @@ def main() -> int:
         device,
     )
     _, subkey = jax.random.split(jax.random.PRNGKey(args.seed))
-    result = jax.jit(run_pass.apply, device=device)(
+    target_feat, result = jax.jit(run_pass.apply, device=device)(
         evoformer_params(params),
         None,
         batch,
@@ -97,6 +98,8 @@ def main() -> int:
         jax.device_put(jnp.asarray(tape["msa_row_order"][0]), device),
     )
     arrays = {
+        "target_feat": np.asarray(target_feat),
+        "target_feat_atom": np.asarray(target_feat[..., -384:]),
         "pre_pair": np.asarray(result["pairformer_pre_pair"]),
         "pre_single": np.asarray(result["pairformer_pre_single"]),
         "block_1_pair": np.asarray(result["pairformer_block_1_pair"]),

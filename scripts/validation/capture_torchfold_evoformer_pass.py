@@ -82,6 +82,8 @@ def main() -> int:
         text=True,
     ).stdout.strip()
     arrays = {
+        "target_feat": to_numpy(target_feat),
+        "target_feat_atom": to_numpy(target_feat[..., -384:]),
         "pre_pair": to_numpy(result["pairformer_pre_pair"]),
         "pre_single": to_numpy(result["pairformer_pre_single"]),
         "block_1_pair": to_numpy(result["pairformer_block_1_pair"]),

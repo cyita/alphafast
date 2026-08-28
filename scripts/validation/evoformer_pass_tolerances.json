@@ -9,6 +9,14 @@
     "weights_sha256"
   ],
   "tensors": {
+    "target_feat": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "target_feat_atom": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
     "pre_single": {
       "max_normalized_rmse": 0.001,
       "min_cosine_similarity": 0.999999
