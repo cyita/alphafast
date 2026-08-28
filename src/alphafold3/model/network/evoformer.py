@@ -342,8 +342,6 @@ class Evoformer(hk.Module):
               layer_index,
               block_1_pair,
               block_1_single,
-              block_24_pair,
-              block_24_single,
           ) = x
           next_pair, next_single = pairformer_fn((pair_act, single_act))
           block_1_pair = jax.lax.cond(
@@ -358,26 +356,12 @@ class Evoformer(hk.Module):
               lambda _: block_1_single,
               operand=None,
           )
-          block_24_pair = jax.lax.cond(
-              layer_index == 23,
-              lambda _: next_pair,
-              lambda _: block_24_pair,
-              operand=None,
-          )
-          block_24_single = jax.lax.cond(
-              layer_index == 23,
-              lambda _: next_single,
-              lambda _: block_24_single,
-              operand=None,
-          )
           return (
               next_pair,
               next_single,
               layer_index + 1,
               block_1_pair,
               block_1_single,
-              block_24_pair,
-              block_24_single,
           )
 
         pairformer_stack = hk.experimental.layer_stack(
@@ -389,15 +373,11 @@ class Evoformer(hk.Module):
             _,
             pairformer_block_1_pair,
             pairformer_block_1_single,
-            pairformer_block_24_pair,
-            pairformer_block_24_single,
         ) = pairformer_stack(
             (
                 pair_activations,
                 single_activations,
                 jnp.asarray(0),
-                jnp.zeros_like(pair_activations),
-                jnp.zeros_like(single_activations),
                 jnp.zeros_like(pair_activations),
                 jnp.zeros_like(single_activations),
             )
@@ -428,7 +408,5 @@ class Evoformer(hk.Module):
         output['pairformer_pre_single'] = pairformer_pre_single
         output['pairformer_block_1_pair'] = pairformer_block_1_pair
         output['pairformer_block_1_single'] = pairformer_block_1_single
-        output['pairformer_block_24_pair'] = pairformer_block_24_pair
-        output['pairformer_block_24_single'] = pairformer_block_24_single
 
     return output

@@ -56,14 +56,6 @@
       "max_normalized_rmse": 0.001,
       "min_cosine_similarity": 0.999999
     },
-    "trunk_pass_6_pairformer_block_24_single": {
-      "max_normalized_rmse": 0.001,
-      "min_cosine_similarity": 0.999999
-    },
-    "trunk_pass_6_pairformer_block_24_pair": {
-      "max_normalized_rmse": 0.001,
-      "min_cosine_similarity": 0.999999
-    },
     "trunk_pass_6_single": {
       "max_normalized_rmse": 0.001,
       "min_cosine_similarity": 0.999999

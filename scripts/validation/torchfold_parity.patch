@@ -1,5 +1,5 @@
 diff --git a/TorchFold_inference/torchfold/torchfold/alphafold3.py b/TorchFold_inference/torchfold/torchfold/alphafold3.py
-index 9c8f35c5cf25d58fee7353a93dd09eaa9463bf7c..8a73ce4bb413ccf688f933503f0652c86e242c32 100644
+index 9c8f35c5cf25d58fee7353a93dd09eaa9463bf7c..72e594485f58a5adae912a6ed24f21ee851a63fc 100644
 --- a/TorchFold_inference/torchfold/torchfold/alphafold3.py
 +++ b/TorchFold_inference/torchfold/torchfold/alphafold3.py
 @@ -189,12 +189,16 @@ class Evoformer(nn.Module):
@@ -30,7 +30,7 @@ index 9c8f35c5cf25d58fee7353a93dd09eaa9463bf7c..8a73ce4bb413ccf688f933503f0652c8
      ) -> dict[str, torch.Tensor]:
  
          if self.first_run:
-@@ -247,21 +253,39 @@ class Evoformer(nn.Module):
+@@ -247,21 +253,34 @@ class Evoformer(nn.Module):
              pair_activations=pair_activations,
              pair_mask=self.pair_mask,
              target_feat=target_feat,
@@ -52,9 +52,6 @@ index 9c8f35c5cf25d58fee7353a93dd09eaa9463bf7c..8a73ce4bb413ccf688f933503f0652c8
 +            if capture_pairformer and block_index == 0:
 +                pairformer_checkpoint_pair = pair_activations.clone()
 +                pairformer_checkpoint_single = single_activations.clone()
-+            if capture_pairformer and block_index == 23:
-+                pairformer_block_24_pair = pair_activations.clone()
-+                pairformer_block_24_single = single_activations.clone()
  
          output = {
              'single': single_activations,
@@ -66,12 +63,10 @@ index 9c8f35c5cf25d58fee7353a93dd09eaa9463bf7c..8a73ce4bb413ccf688f933503f0652c8
 +            output['pairformer_pre_single'] = pairformer_pre_single
 +            output['pairformer_block_1_pair'] = pairformer_checkpoint_pair
 +            output['pairformer_block_1_single'] = pairformer_checkpoint_single
-+            output['pairformer_block_24_pair'] = pairformer_block_24_pair
-+            output['pairformer_block_24_single'] = pairformer_block_24_single
  
          return output
  
-@@ -315,11 +339,17 @@ class AlphaFold3(nn.Module):
+@@ -315,11 +334,17 @@ class AlphaFold3(nn.Module):
          positions: torch.Tensor,
          noise_level_prev: torch.Tensor,
          mask: torch.Tensor,
@@ -91,7 +86,7 @@ index 9c8f35c5cf25d58fee7353a93dd09eaa9463bf7c..8a73ce4bb413ccf688f933503f0652c8
          )
  
          gamma = self.gamma_0 * (noise_level > self.gamma_min)
-@@ -327,8 +357,10 @@ class AlphaFold3(nn.Module):
+@@ -327,8 +352,10 @@ class AlphaFold3(nn.Module):
  
          noise_scale = self.noise_scale * \
              torch.sqrt(t_hat**2 - noise_level_prev**2)
@@ -104,7 +99,7 @@ index 9c8f35c5cf25d58fee7353a93dd09eaa9463bf7c..8a73ce4bb413ccf688f933503f0652c8
          # noise = noise_scale
          positions_noisy = positions + noise
  
-@@ -342,12 +374,15 @@ class AlphaFold3(nn.Module):
+@@ -342,12 +369,15 @@ class AlphaFold3(nn.Module):
          d_t = noise_level - t_hat
          positions_out = positions_noisy + self.step_scale * d_t * grad
  
@@ -120,7 +115,7 @@ index 9c8f35c5cf25d58fee7353a93dd09eaa9463bf7c..8a73ce4bb413ccf688f933503f0652c8
      ) -> dict[str, torch.Tensor]:
          """Sample using denoiser on batch."""
  
-@@ -359,9 +394,16 @@ class AlphaFold3(nn.Module):
+@@ -359,9 +389,16 @@ class AlphaFold3(nn.Module):
          noise_levels = diffusion_head.noise_schedule(
              torch.linspace(0, 1, self.diffusion_steps + 1, device=device))
  
@@ -139,7 +134,7 @@ index 9c8f35c5cf25d58fee7353a93dd09eaa9463bf7c..8a73ce4bb413ccf688f933503f0652c8
  
          if USE_DIST:
              assert self.diffusion_steps == 200
-@@ -428,21 +470,35 @@ class AlphaFold3(nn.Module):
+@@ -428,21 +465,35 @@ class AlphaFold3(nn.Module):
          else:
              for sample_idx in range(num_samples):
                  for step_idx in trange(self.diffusion_steps, desc=f"Diffusion {sample_idx}"):
@@ -178,7 +173,7 @@ index 9c8f35c5cf25d58fee7353a93dd09eaa9463bf7c..8a73ce4bb413ccf688f933503f0652c8
          batch = feat_batch.Batch.from_data_dict(batch)
          num_res = batch.num_res
  
-@@ -461,18 +517,42 @@ class AlphaFold3(nn.Module):
+@@ -461,18 +512,38 @@ class AlphaFold3(nn.Module):
  
          t1 = time.time()
          rk = dist.get_rank() if USE_DIST else 0
@@ -210,10 +205,6 @@ index 9c8f35c5cf25d58fee7353a93dd09eaa9463bf7c..8a73ce4bb413ccf688f933503f0652c8
 +                        embeddings['pairformer_block_1_single'].clone(),
 +                    'trunk_pass_6_pairformer_block_1_pair':
 +                        embeddings['pairformer_block_1_pair'].clone(),
-+                    'trunk_pass_6_pairformer_block_24_single':
-+                        embeddings['pairformer_block_24_single'].clone(),
-+                    'trunk_pass_6_pairformer_block_24_pair':
-+                        embeddings['pairformer_block_24_pair'].clone(),
 +                }
  
          t2 = time.time()
@@ -223,7 +214,7 @@ index 9c8f35c5cf25d58fee7353a93dd09eaa9463bf7c..8a73ce4bb413ccf688f933503f0652c8
          t3 = time.time()
          # logger.info(f"Time taken for Diffusion: {t3 - t2:.4f}s")
  
-@@ -501,8 +581,27 @@ class AlphaFold3(nn.Module):
+@@ -501,8 +572,27 @@ class AlphaFold3(nn.Module):
          distogram = self.distogram_head(batch, embeddings)
          # logger.info(f"Time taken for Distogram: {time.time() - t4:.4f}s")
  

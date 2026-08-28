@@ -302,8 +302,6 @@ class Model(hk.Module):
             'pairformer_pre_single',
             'pairformer_block_1_pair',
             'pairformer_block_1_single',
-            'pairformer_block_24_pair',
-            'pairformer_block_24_single',
         ):
           embeddings[checkpoint_name] = embeddings[checkpoint_name].astype(
               jnp.float32
@@ -326,13 +324,11 @@ class Model(hk.Module):
       for checkpoint_name in (
           'pairformer_pre_pair',
           'pairformer_block_1_pair',
-          'pairformer_block_24_pair',
       ):
         embeddings[checkpoint_name] = jnp.zeros_like(embeddings['pair'])
       for checkpoint_name in (
           'pairformer_pre_single',
           'pairformer_block_1_single',
-          'pairformer_block_24_single',
       ):
         embeddings[checkpoint_name] = jnp.zeros_like(embeddings['single'])
     trunk_single_checkpoints = None
@@ -360,8 +356,6 @@ class Model(hk.Module):
                 'pairformer_pre_pair',
                 'pairformer_block_1_single',
                 'pairformer_block_1_pair',
-                'pairformer_block_24_single',
-                'pairformer_block_24_pair',
             )
         )
 
@@ -389,8 +383,6 @@ class Model(hk.Module):
                   'pairformer_pre_pair',
                   'pairformer_block_1_single',
                   'pairformer_block_1_pair',
-                  'pairformer_block_24_single',
-                  'pairformer_block_24_pair',
               )
           )
           pass_6_detail = jax.lax.cond(
@@ -472,8 +464,6 @@ class Model(hk.Module):
               'trunk_pass_6_pre_pairformer_pair',
               'trunk_pass_6_pairformer_block_1_single',
               'trunk_pass_6_pairformer_block_1_pair',
-              'trunk_pass_6_pairformer_block_24_single',
-              'trunk_pass_6_pairformer_block_24_pair',
           ),
           pass_6_detail,
           strict=True,
