@@ -9,11 +9,12 @@ import sys
 
 from absl import flags
 from alphafold3.model import feat_batch
-from alphafold3.model import model
 from alphafold3.model import params as model_params
 from alphafold3.model.components import utils
 from alphafold3.model.inference import make_model_config
+from alphafold3.model.network import atom_cross_attention
 from alphafold3.model.network import evoformer as evoformer_network
+from alphafold3.model.network import featurization
 import haiku as hk
 import jax
 from jax import numpy as jnp
@@ -61,9 +62,19 @@ def main() -> int:
         embedding_module = evoformer_network.Evoformer(
             config.evoformer, config.global_config
         )
-        target_feat = model.create_target_feat_embedding(
-            batch, embedding_module.config, config.global_config
+        target_feat_base = featurization.create_target_feat(
+            batch, append_per_atom_features=False
         )
+        enc = atom_cross_attention.atom_cross_att_encoder(
+            token_atoms_act=None,
+            trunk_single_cond=None,
+            trunk_pair_cond=None,
+            config=embedding_module.config.per_atom_conditioning,
+            global_config=config.global_config,
+            batch=batch,
+            name="evoformer_conditioning",
+        )
+        target_feat = jnp.concatenate([target_feat_base, enc.token_act], axis=-1)
         prev = {
             "pair": jnp.zeros(
                 [batch.num_res, batch.num_res, config.evoformer.pair_channel],
@@ -82,7 +93,7 @@ def main() -> int:
             msa_row_order=msa_row_order,
             capture_pairformer=True,
         )
-        return target_feat, embeddings
+        return target_feat_base, enc, target_feat, embeddings
 
     params = model_params.get_model_haiku_params(model_dir=args.model_dir)
     batch = jax.device_put(
@@ -90,7 +101,9 @@ def main() -> int:
         device,
     )
     _, subkey = jax.random.split(jax.random.PRNGKey(args.seed))
-    target_feat, result = jax.jit(run_pass.apply, device=device)(
+    target_feat_base, enc, target_feat, result = jax.jit(
+        run_pass.apply, device=device
+    )(
         evoformer_params(params),
         None,
         batch,
@@ -98,8 +111,12 @@ def main() -> int:
         jax.device_put(jnp.asarray(tape["msa_row_order"][0]), device),
     )
     arrays = {
+        "target_feat_base": np.asarray(target_feat_base),
         "target_feat": np.asarray(target_feat),
-        "target_feat_atom": np.asarray(target_feat[..., -384:]),
+        "target_feat_atom": np.asarray(enc.token_act),
+        "atom_queries_single_cond": np.asarray(enc.queries_single_cond),
+        "atom_pair_cond": np.asarray(enc.pair_cond),
+        "atom_skip_connection": np.asarray(enc.skip_connection),
         "pre_pair": np.asarray(result["pairformer_pre_pair"]),
         "pre_single": np.asarray(result["pairformer_pre_single"]),
         "block_1_pair": np.asarray(result["pairformer_block_1_pair"]),

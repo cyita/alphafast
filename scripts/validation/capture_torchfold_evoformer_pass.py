@@ -13,6 +13,7 @@ import torch.utils._pytree as pytree
 from torchfold import feat_batch
 from torchfold.alphafold3 import AlphaFold3
 from torchfold.fastnn import config as fastnn_config
+from torchfold.nn import featurization
 from torchfold.params import import_jax_weights_
 
 from parity_io import load_npz, sha256_file, write_npz
@@ -52,7 +53,16 @@ def main() -> int:
     batch_dict["deletion_mean"] = batch_dict["deletion_mean"].float()
     batch = feat_batch.Batch.from_data_dict(batch_dict)
     with torch.inference_mode():
-        target_feat = model.create_target_feat_embedding(batch)
+        target_feat_base = featurization.create_target_feat(
+            batch, append_per_atom_features=False
+        )
+        enc = model.evoformer_conditioning(
+            token_atoms_act=None,
+            trunk_single_cond=None,
+            trunk_pair_cond=None,
+            batch=batch,
+        )
+        target_feat = torch.concatenate([target_feat_base, enc.token_act], dim=-1)
         prev = {
             "pair": torch.zeros(
                 [batch.num_res, batch.num_res, model.evoformer_pair_channel],
@@ -82,8 +92,12 @@ def main() -> int:
         text=True,
     ).stdout.strip()
     arrays = {
+        "target_feat_base": to_numpy(target_feat_base),
         "target_feat": to_numpy(target_feat),
-        "target_feat_atom": to_numpy(target_feat[..., -384:]),
+        "target_feat_atom": to_numpy(enc.token_act),
+        "atom_queries_single_cond": to_numpy(enc.queries_single_cond),
+        "atom_pair_cond": to_numpy(enc.pair_cond),
+        "atom_skip_connection": to_numpy(enc.skip_connection),
         "pre_pair": to_numpy(result["pairformer_pre_pair"]),
         "pre_single": to_numpy(result["pairformer_pre_single"]),
         "block_1_pair": to_numpy(result["pairformer_block_1_pair"]),
