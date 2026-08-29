@@ -5,12 +5,30 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import numpy as np
 
 
 METADATA_KEY = "_metadata_json"
+DETERMINISTIC_XLA_FLAG = "--xla_gpu_exclude_nondeterministic_ops"
+
+
+def configure_deterministic_gpu() -> None:
+    """Configure reproducible XLA/cuBLAS kernels before JAX initializes."""
+    flags = os.environ.get("XLA_FLAGS", "").split()
+    if DETERMINISTIC_XLA_FLAG not in flags:
+        flags.append(DETERMINISTIC_XLA_FLAG)
+    os.environ["XLA_FLAGS"] = " ".join(flags)
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
+
+def gpu_determinism_metadata() -> dict[str, str]:
+    return {
+        "xla_flags": os.environ["XLA_FLAGS"],
+        "cublas_workspace_config": os.environ["CUBLAS_WORKSPACE_CONFIG"],
+    }
 
 
 def sha256_file(path: Path) -> str:

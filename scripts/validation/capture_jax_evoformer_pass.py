@@ -7,6 +7,10 @@ import argparse
 from pathlib import Path
 import sys
 
+from parity_io import configure_deterministic_gpu
+
+configure_deterministic_gpu()
+
 from absl import flags
 from alphafold3.model import feat_batch
 from alphafold3.model import params as model_params
@@ -20,7 +24,7 @@ import jax
 from jax import numpy as jnp
 import numpy as np
 
-from parity_io import load_npz, sha256_file, write_npz
+from parity_io import gpu_determinism_metadata, load_npz, sha256_file, write_npz
 
 
 ATOM_SINGLE_EMBEDDINGS = {
@@ -255,6 +259,7 @@ def main() -> int:
         "frozen_features_sha256": sha256_file(args.frozen_features),
         "random_tape_sha256": sha256_file(args.random_tape),
         "weights_sha256": sha256_file(args.weights_file),
+        "gpu_determinism": gpu_determinism_metadata(),
     }
     write_npz(args.output_file, arrays, metadata)
     print(f"Wrote JAX Evoformer pass 1 to {args.output_file}")

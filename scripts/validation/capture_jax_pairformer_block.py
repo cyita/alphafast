@@ -7,6 +7,10 @@ import argparse
 from pathlib import Path
 import sys
 
+from parity_io import configure_deterministic_gpu
+
+configure_deterministic_gpu()
+
 from absl import flags
 from alphafold3.model import params as model_params
 from alphafold3.model.inference import make_model_config
@@ -16,7 +20,7 @@ import jax
 from jax import numpy as jnp
 import numpy as np
 
-from parity_io import load_npz, sha256_file, write_npz
+from parity_io import gpu_determinism_metadata, load_npz, sha256_file, write_npz
 
 
 PAIRFORMER_PREFIX = (
@@ -109,6 +113,7 @@ def main() -> int:
         "precision": "fp32",
         "source_reference_sha256": sha256_file(args.reference),
         "weights_sha256": sha256_file(args.weights_file),
+        "gpu_determinism": gpu_determinism_metadata(),
     }
     write_npz(args.output_file, arrays, metadata)
     print(f"Wrote JAX Pairformer block {args.block} to {args.output_file}")

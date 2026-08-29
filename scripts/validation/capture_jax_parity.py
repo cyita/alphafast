@@ -7,12 +7,17 @@ import argparse
 from pathlib import Path
 import sys
 
+from parity_io import configure_deterministic_gpu
+
+configure_deterministic_gpu()
+
 from absl import flags
 from alphafold3.model.inference import make_model_config, ModelRunner
 import jax
+import jaxlib
 import numpy as np
 
-from parity_io import load_npz, sha256_file, write_npz
+from parity_io import gpu_determinism_metadata, load_npz, sha256_file, write_npz
 
 
 def parse_args() -> argparse.Namespace:
@@ -119,6 +124,12 @@ def main() -> int:
         "frozen_features_sha256": sha256_file(args.frozen_features),
         "random_tape_sha256": sha256_file(args.random_tape),
         "weights_sha256": sha256_file(args.weights_file),
+        "jax_runtime": {
+            "jax": jax.__version__,
+            "jaxlib": jaxlib.__version__,
+            "device": str(device),
+            **gpu_determinism_metadata(),
+        },
     }
     arrays = checkpoint_arrays(result, diffusion_steps, args.num_recycles + 1)
     write_npz(args.output_file, arrays, metadata)
