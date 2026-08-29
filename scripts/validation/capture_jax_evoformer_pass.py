@@ -31,6 +31,19 @@ ATOM_SINGLE_EMBEDDINGS = {
     "evoformer_conditioning_embed_ref_atom_name": "atom_embed_ref_atom_name",
 }
 
+ATOM_PAIR_PROJECTIONS = {
+    "evoformer_conditioning_single_to_pair_cond_row": "atom_pair_row",
+    "evoformer_conditioning_single_to_pair_cond_col": "atom_pair_col",
+    "evoformer_conditioning_embed_pair_offsets": "atom_pair_offsets",
+    "evoformer_conditioning_embed_pair_distances": "atom_pair_distances",
+    "evoformer_conditioning_embed_pair_offsets_valid": "atom_pair_offsets_valid",
+    "evoformer_conditioning_pair_mlp_1": "atom_pair_mlp_1",
+    "evoformer_conditioning_pair_mlp_2": "atom_pair_mlp_2",
+    "evoformer_conditioning_pair_mlp_3": "atom_pair_mlp_3",
+}
+
+ATOM_BOUNDARIES = ATOM_SINGLE_EMBEDDINGS | ATOM_PAIR_PROJECTIONS
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -75,7 +88,7 @@ def main() -> int:
 
         def capture_atom_terms(next_f, call_args, call_kwargs, context):
             output = next_f(*call_args, **call_kwargs)
-            tensor_name = ATOM_SINGLE_EMBEDDINGS.get(context.module.name)
+            tensor_name = ATOM_BOUNDARIES.get(context.module.name)
             if tensor_name and context.method_name == "__call__":
                 atom_terms[f"{tensor_name}_input"] = call_args[0]
                 atom_terms[tensor_name] = output

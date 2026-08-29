@@ -49,6 +49,70 @@
       "max_normalized_rmse": 0.001,
       "min_cosine_similarity": 0.999999
     },
+    "atom_pair_row_input": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_pair_row": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_pair_col_input": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_pair_col": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_pair_offsets_input": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_pair_offsets": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_pair_distances_input": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_pair_distances": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_pair_offsets_valid_input": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_pair_offsets_valid": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_pair_mlp_1_input": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_pair_mlp_1": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_pair_mlp_2_input": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_pair_mlp_2": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_pair_mlp_3_input": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_pair_mlp_3": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
     "target_feat_base": {
       "max_normalized_rmse": 0.001,
       "min_cosine_similarity": 0.999999

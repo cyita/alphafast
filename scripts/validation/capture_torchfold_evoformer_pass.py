@@ -28,6 +28,19 @@ ATOM_SINGLE_EMBEDDINGS = {
     "embed_ref_atom_name": "atom_embed_ref_atom_name",
 }
 
+ATOM_PAIR_PROJECTIONS = {
+    "single_to_pair_cond_row_1": "atom_pair_row",
+    "single_to_pair_cond_col_1": "atom_pair_col",
+    "embed_pair_offsets_1": "atom_pair_offsets",
+    "embed_pair_distances_1": "atom_pair_distances",
+    "embed_pair_offsets_valid": "atom_pair_offsets_valid",
+    "pair_mlp_1": "atom_pair_mlp_1",
+    "pair_mlp_2": "atom_pair_mlp_2",
+    "pair_mlp_3": "atom_pair_mlp_3",
+}
+
+ATOM_BOUNDARIES = ATOM_SINGLE_EMBEDDINGS | ATOM_PAIR_PROJECTIONS
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -74,7 +87,7 @@ def main() -> int:
         getattr(model.evoformer_conditioning, module_name).register_forward_hook(
             capture_atom_term(tensor_name)
         )
-        for module_name, tensor_name in ATOM_SINGLE_EMBEDDINGS.items()
+        for module_name, tensor_name in ATOM_BOUNDARIES.items()
     ]
     with torch.inference_mode():
         try:
