@@ -93,6 +93,7 @@ def main() -> int:
     num_samples = int(tape_metadata["num_samples"])
     diffusion_steps = int(tape_metadata["diffusion_steps"])
     devices = jax.local_devices(backend="gpu")
+    device = devices[args.device]
     config = make_model_config(
         flash_attention_implementation="xla",
         num_diffusion_samples=num_samples,
@@ -104,7 +105,7 @@ def main() -> int:
         config.global_config.bfloat16 = "none"
     runner = ModelRunner(
         config=config,
-        device=devices[args.device],
+        device=device,
         model_dir=args.model_dir,
     )
     result = runner.run_inference(
