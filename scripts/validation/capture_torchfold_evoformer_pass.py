@@ -41,6 +41,20 @@ ATOM_PAIR_PROJECTIONS = {
 
 ATOM_BOUNDARIES = ATOM_SINGLE_EMBEDDINGS | ATOM_PAIR_PROJECTIONS
 
+ATOM_ATTENTION_INTERMEDIATES = (
+    "q_norm",
+    "k_norm",
+    "q_projection",
+    "k_projection",
+    "logits",
+    "weights",
+    "v_projection",
+    "weighted_average",
+    "gate_logits",
+    "gated_average",
+    "attention_update",
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -118,6 +132,9 @@ def main() -> int:
             keys_mask = torch.from_numpy(reference["atom_keys_mask"]).to(device)
             pair_cond = torch.from_numpy(reference["atom_pair_cond"]).to(device)
             transformer = model.evoformer_conditioning.atom_transformer_encoder
+            block_one_attention = transformer.cross_attention[0]
+            block_one_attention.capture_intermediates = True
+            block_one_attention.last_intermediates = None
             attention_updates = []
             transition_updates = []
 
@@ -149,6 +166,7 @@ def main() -> int:
             finally:
                 for hook in transformer_hooks:
                     hook.remove()
+                block_one_attention.capture_intermediates = False
             atom_transformer_same_input *= queries_mask[..., None]
             block_act = queries_single_cond.clone()
             for block_index, (attention_update, transition_update) in enumerate(
@@ -162,6 +180,32 @@ def main() -> int:
                 atom_transformer_block_acts[
                     f"atom_transformer_block_{block_index}_transition"
                 ] = block_act.clone() * queries_mask[..., None]
+            query_terms = {
+                "q_norm",
+                "weighted_average",
+                "gate_logits",
+                "gated_average",
+                "attention_update",
+            }
+            key_terms = {"k_norm"}
+            query_head_terms = {"q_projection"}
+            key_head_terms = {"k_projection", "v_projection"}
+            pair_mask = queries_mask[:, None, :, None] * keys_mask[:, None, None, :]
+            for name in ATOM_ATTENTION_INTERMEDIATES:
+                value = block_one_attention.last_intermediates[name]
+                if name in query_terms:
+                    value = value * queries_mask[..., None]
+                elif name in key_terms:
+                    value = value * keys_mask[..., None]
+                elif name in query_head_terms:
+                    value = value * queries_mask[..., None, None]
+                elif name in key_head_terms:
+                    value = value * keys_mask[..., None, None]
+                else:
+                    value = value * pair_mask
+                atom_transformer_block_acts[
+                    f"atom_transformer_block_1_{name}"
+                ] = value
         target_feat = torch.concatenate([target_feat_base, enc.token_act], dim=-1)
         prev = {
             "pair": torch.zeros(

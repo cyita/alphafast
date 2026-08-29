@@ -271,7 +271,8 @@ def cross_attention(
     single_cond_q: jnp.ndarray | None = None,  # (..., Q, C)
     single_cond_k: jnp.ndarray | None = None,  # (..., K, C)
     name: str = '',
-) -> jnp.ndarray:
+    capture_intermediates: bool = False,
+) -> jnp.ndarray | tuple[jnp.ndarray, dict[str, jnp.ndarray]]:
   """Multihead self-attention."""
   assert len(mask_q.shape) == len(x_q.shape) - 1, f'{mask_q.shape}, {x_q.shape}'
   assert len(mask_k.shape) == len(x_k.shape) - 1, f'{mask_k.shape}, {x_k.shape}'
@@ -284,6 +285,8 @@ def cross_attention(
 
   x_q = adaptive_layernorm(x_q, single_cond_q, name=f'{name}q')
   x_k = adaptive_layernorm(x_k, single_cond_k, name=f'{name}k')
+  if capture_intermediates:
+    intermediates = {'q_norm': x_q, 'k_norm': x_k}
 
   assert config.key_dim % config.num_head == 0
   assert config.value_dim % config.num_head == 0
@@ -301,18 +304,28 @@ def cross_attention(
   # einsum in float32.
   q = q.astype(jnp.float32)
   k = k.astype(jnp.float32)
+  if capture_intermediates:
+    intermediates['q_projection'] = q
+    intermediates['k_projection'] = k
   bias = bias.astype(jnp.float32)
   logits = jnp.einsum('...qhc,...khc->...hqk', q * key_dim ** (-0.5), k) + bias
   if pair_logits is not None:
     logits += pair_logits
   weights = jax.nn.softmax(logits, axis=-1)
   weights = jnp.asarray(weights, dtype=x_q.dtype)
+  if capture_intermediates:
+    intermediates['logits'] = logits
+    intermediates['weights'] = weights
 
   v = hm.Linear(
       (config.num_head, value_dim), use_bias=False, name=f'{name}v_projection'
   )(x_k)
+  if capture_intermediates:
+    intermediates['v_projection'] = v
   weighted_avg = jnp.einsum('...hqk,...khc->...qhc', weights, v)
   weighted_avg = jnp.reshape(weighted_avg, weighted_avg.shape[:-2] + (-1,))
+  if capture_intermediates:
+    intermediates['weighted_average'] = weighted_avg
 
   gate_logits = hm.Linear(
       config.num_head * value_dim,
@@ -320,11 +333,18 @@ def cross_attention(
       initializer='zeros',
       name=f'{name}gating_query',
   )(x_q)
+  if capture_intermediates:
+    intermediates['gate_logits'] = gate_logits
   weighted_avg *= jax.nn.sigmoid(gate_logits)
+  if capture_intermediates:
+    intermediates['gated_average'] = weighted_avg
 
   output = adaptive_zero_init(
       weighted_avg, x_q.shape[-1], single_cond_q, global_config, name
   )
+  if capture_intermediates:
+    intermediates['attention_update'] = output
+    return output, intermediates
   return output
 
 
@@ -363,7 +383,7 @@ class CrossAttTransformer(hk.Module):
           queries_to_keys, queries_act, layout_axes=(-3, -2)
       )
       # cross attention
-      queries_act += cross_attention(
+      attention_output = cross_attention(
           x_q=queries_act,
           x_k=keys_act,
           mask_q=queries_mask,
@@ -374,7 +394,13 @@ class CrossAttTransformer(hk.Module):
           single_cond_q=queries_single_cond,
           single_cond_k=keys_single_cond,
           name=self.name,
+          capture_intermediates=capture_intermediates,
       )
+      if capture_intermediates:
+        attention_update, attention_intermediates = attention_output
+      else:
+        attention_update = attention_output
+      queries_act += attention_update
       attention_act = queries_act
       queries_act += transition_block(
           queries_act,
@@ -384,7 +410,11 @@ class CrossAttTransformer(hk.Module):
           name=self.name,
       )
       if capture_intermediates:
-        return queries_act, (attention_act, queries_act)
+        return queries_act, {
+            'attention_state': attention_act,
+            'transition_state': queries_act,
+            **attention_intermediates,
+        }
       return queries_act, None
 
     # Precompute pair logits for performance

@@ -44,6 +44,20 @@ ATOM_PAIR_PROJECTIONS = {
 
 ATOM_BOUNDARIES = ATOM_SINGLE_EMBEDDINGS | ATOM_PAIR_PROJECTIONS
 
+ATOM_ATTENTION_INTERMEDIATES = (
+    "q_norm",
+    "k_norm",
+    "q_projection",
+    "k_projection",
+    "logits",
+    "weights",
+    "v_projection",
+    "weighted_average",
+    "gate_logits",
+    "gated_average",
+    "attention_update",
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -178,8 +192,11 @@ def main() -> int:
         "output_pair": np.asarray(result["pair"]),
         "output_single": np.asarray(result["single"]),
     }
-    attention_acts, transition_acts = atom_transformer_intermediates
-    atom_mask = np.asarray(enc.queries_mask)[..., None]
+    query_mask = np.asarray(enc.queries_mask)
+    key_mask = np.asarray(enc.keys_mask)
+    atom_mask = query_mask[..., None]
+    attention_acts = atom_transformer_intermediates["attention_state"]
+    transition_acts = atom_transformer_intermediates["transition_state"]
     for block_index in range(attention_acts.shape[0]):
         arrays[f"atom_transformer_block_{block_index + 1}_attention"] = (
             np.asarray(attention_acts[block_index]) * atom_mask
@@ -187,6 +204,30 @@ def main() -> int:
         arrays[f"atom_transformer_block_{block_index + 1}_transition"] = (
             np.asarray(transition_acts[block_index]) * atom_mask
         )
+    query_terms = {
+        "q_norm",
+        "weighted_average",
+        "gate_logits",
+        "gated_average",
+        "attention_update",
+    }
+    key_terms = {"k_norm"}
+    query_head_terms = {"q_projection"}
+    key_head_terms = {"k_projection", "v_projection"}
+    pair_mask = query_mask[:, None, :, None] * key_mask[:, None, None, :]
+    for name in ATOM_ATTENTION_INTERMEDIATES:
+        value = np.asarray(atom_transformer_intermediates[name][0])
+        if name in query_terms:
+            value = value * query_mask[..., None]
+        elif name in key_terms:
+            value = value * key_mask[..., None]
+        elif name in query_head_terms:
+            value = value * query_mask[..., None, None]
+        elif name in key_head_terms:
+            value = value * key_mask[..., None, None]
+        else:
+            value = value * pair_mask
+        arrays[f"atom_transformer_block_1_{name}"] = value
     metadata = {
         "artifact_type": "evoformer_pass_parity",
         "format_version": 1,

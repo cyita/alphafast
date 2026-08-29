@@ -153,6 +153,50 @@
       "max_normalized_rmse": 0.001,
       "min_cosine_similarity": 0.999999
     },
+    "atom_transformer_block_1_q_norm": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_k_norm": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_q_projection": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_k_projection": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_logits": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_weights": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_v_projection": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_weighted_average": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_gate_logits": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_gated_average": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_attention_update": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
     "atom_transformer_block_2_attention": {
       "max_normalized_rmse": 0.001,
       "min_cosine_similarity": 0.999999
