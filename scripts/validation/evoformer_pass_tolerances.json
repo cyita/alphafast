@@ -145,6 +145,30 @@
       "max_normalized_rmse": 0.001,
       "min_cosine_similarity": 0.999999
     },
+    "atom_transformer_block_1_attention": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_transition": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_2_attention": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_2_transition": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_3_attention": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_3_transition": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
     "target_feat": {
       "max_normalized_rmse": 0.001,
       "min_cosine_similarity": 0.999999

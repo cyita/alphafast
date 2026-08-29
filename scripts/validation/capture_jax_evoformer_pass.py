@@ -98,7 +98,10 @@ def main() -> int:
             batch, append_per_atom_features=False
         )
         with hk.intercept_methods(capture_atom_terms):
-            enc = atom_cross_attention.atom_cross_att_encoder(
+            (
+                enc,
+                atom_transformer_intermediates,
+            ) = atom_cross_attention.atom_cross_att_encoder(
                 token_atoms_act=None,
                 trunk_single_cond=None,
                 trunk_pair_cond=None,
@@ -106,6 +109,7 @@ def main() -> int:
                 global_config=config.global_config,
                 batch=batch,
                 name="evoformer_conditioning",
+                capture_transformer=True,
             )
         target_feat = jnp.concatenate([target_feat_base, enc.token_act], axis=-1)
         prev = {
@@ -126,7 +130,14 @@ def main() -> int:
             msa_row_order=msa_row_order,
             capture_pairformer=True,
         )
-        return target_feat_base, atom_terms, enc, target_feat, embeddings
+        return (
+            target_feat_base,
+            atom_terms,
+            enc,
+            atom_transformer_intermediates,
+            target_feat,
+            embeddings,
+        )
 
     params = model_params.get_model_haiku_params(model_dir=args.model_dir)
     batch = jax.device_put(
@@ -134,9 +145,14 @@ def main() -> int:
         device,
     )
     _, subkey = jax.random.split(jax.random.PRNGKey(args.seed))
-    target_feat_base, atom_terms, enc, target_feat, result = jax.jit(
-        run_pass.apply, device=device
-    )(
+    (
+        target_feat_base,
+        atom_terms,
+        enc,
+        atom_transformer_intermediates,
+        target_feat,
+        result,
+    ) = jax.jit(run_pass.apply, device=device)(
         evoformer_params(params),
         None,
         batch,
@@ -162,6 +178,15 @@ def main() -> int:
         "output_pair": np.asarray(result["pair"]),
         "output_single": np.asarray(result["single"]),
     }
+    attention_acts, transition_acts = atom_transformer_intermediates
+    atom_mask = np.asarray(enc.queries_mask)[..., None]
+    for block_index in range(attention_acts.shape[0]):
+        arrays[f"atom_transformer_block_{block_index + 1}_attention"] = (
+            np.asarray(attention_acts[block_index]) * atom_mask
+        )
+        arrays[f"atom_transformer_block_{block_index + 1}_transition"] = (
+            np.asarray(transition_acts[block_index]) * atom_mask
+        )
     metadata = {
         "artifact_type": "evoformer_pass_parity",
         "format_version": 1,

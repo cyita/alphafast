@@ -355,7 +355,8 @@ class CrossAttTransformer(hk.Module):
       queries_single_cond: jnp.ndarray,  # (num_subsets, num_queries, ch)
       keys_single_cond: jnp.ndarray,  # (num_subsets, num_keys, ch)
       pair_cond: jnp.ndarray,  # (num_subsets, num_queries, num_keys, ch)
-  ) -> jnp.ndarray:
+      capture_intermediates: bool = False,
+  ) -> jnp.ndarray | tuple[jnp.ndarray, tuple[jnp.ndarray, jnp.ndarray]]:
     def block(queries_act, pair_logits):
       # copy the queries activations to the keys layout
       keys_act = atom_layout.convert(
@@ -374,6 +375,7 @@ class CrossAttTransformer(hk.Module):
           single_cond_k=keys_single_cond,
           name=self.name,
       )
+      attention_act = queries_act
       queries_act += transition_block(
           queries_act,
           self.config.num_intermediate_factor,
@@ -381,6 +383,8 @@ class CrossAttTransformer(hk.Module):
           queries_single_cond,
           name=self.name,
       )
+      if capture_intermediates:
+        return queries_act, (attention_act, queries_act)
       return queries_act, None
 
     # Precompute pair logits for performance
@@ -397,6 +401,9 @@ class CrossAttTransformer(hk.Module):
     # (num_block, num_subsets, num_heads, num_queries, num_keys)
     pair_logits = jnp.transpose(pair_logits, [3, 0, 4, 1, 2])
 
-    return hk.experimental.layer_stack(
+    output, intermediates = hk.experimental.layer_stack(
         self.config.num_blocks, with_per_layer_inputs=True
-    )(block)(queries_act, pair_logits)[0]
+    )(block)(queries_act, pair_logits)
+    if capture_intermediates:
+      return output, intermediates
+    return output

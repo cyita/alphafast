@@ -122,7 +122,11 @@ def atom_cross_att_encoder(
     global_config: model_config.GlobalConfig,
     batch: feat_batch.Batch,
     name: str,
-) -> AtomCrossAttEncoderOutput:
+    capture_transformer: bool = False,
+) -> (
+    AtomCrossAttEncoderOutput
+    | tuple[AtomCrossAttEncoderOutput, tuple[jnp.ndarray, jnp.ndarray]]
+):
   """Cross-attention on flat atom subsets and mapping to per-token features."""
   c = config
 
@@ -313,7 +317,7 @@ def atom_cross_att_encoder(
   )(jax.nn.relu(pair_act2))
 
   # Run the atom cross attention transformer.
-  queries_act = diffusion_transformer.CrossAttTransformer(
+  transformer_output = diffusion_transformer.CrossAttTransformer(
       c.atom_transformer, global_config, name=f'{name}_atom_transformer_encoder'
   )(
       queries_act=queries_act,
@@ -323,7 +327,12 @@ def atom_cross_att_encoder(
       queries_single_cond=queries_single_cond,
       keys_single_cond=keys_single_cond,
       pair_cond=pair_act,
+      capture_intermediates=capture_transformer,
   )
+  if capture_transformer:
+    queries_act, transformer_intermediates = transformer_output
+  else:
+    queries_act = transformer_output
   queries_act *= queries_mask[..., None]
   skip_connection = queries_act
 
@@ -340,7 +349,7 @@ def atom_cross_att_encoder(
       token_atoms_mask[..., None], jax.nn.relu(token_atoms_act), axis=-2
   )
 
-  return AtomCrossAttEncoderOutput(
+  output = AtomCrossAttEncoderOutput(
       token_act=token_act,
       skip_connection=skip_connection,
       queries_mask=queries_mask,
@@ -349,6 +358,9 @@ def atom_cross_att_encoder(
       keys_single_cond=keys_single_cond,
       pair_cond=pair_act,
   )
+  if capture_transformer:
+    return output, transformer_intermediates
+  return output
 
 
 class AtomCrossAttDecoderConfig(base_config.BaseConfig):
