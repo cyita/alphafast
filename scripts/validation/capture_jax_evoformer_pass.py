@@ -23,6 +23,15 @@ import numpy as np
 from parity_io import load_npz, sha256_file, write_npz
 
 
+ATOM_SINGLE_EMBEDDINGS = {
+    "evoformer_conditioning_embed_ref_pos": "atom_embed_ref_pos",
+    "evoformer_conditioning_embed_ref_mask": "atom_embed_ref_mask",
+    "evoformer_conditioning_embed_ref_element": "atom_embed_ref_element",
+    "evoformer_conditioning_embed_ref_charge": "atom_embed_ref_charge",
+    "evoformer_conditioning_embed_ref_atom_name": "atom_embed_ref_atom_name",
+}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--frozen-features", type=Path, required=True)
@@ -62,18 +71,29 @@ def main() -> int:
         embedding_module = evoformer_network.Evoformer(
             config.evoformer, config.global_config
         )
+        atom_terms = {}
+
+        def capture_atom_terms(next_f, call_args, call_kwargs, context):
+            output = next_f(*call_args, **call_kwargs)
+            tensor_name = ATOM_SINGLE_EMBEDDINGS.get(context.module.name)
+            if tensor_name and context.method_name == "__call__":
+                atom_terms[f"{tensor_name}_input"] = call_args[0]
+                atom_terms[tensor_name] = output
+            return output
+
         target_feat_base = featurization.create_target_feat(
             batch, append_per_atom_features=False
         )
-        enc = atom_cross_attention.atom_cross_att_encoder(
-            token_atoms_act=None,
-            trunk_single_cond=None,
-            trunk_pair_cond=None,
-            config=embedding_module.config.per_atom_conditioning,
-            global_config=config.global_config,
-            batch=batch,
-            name="evoformer_conditioning",
-        )
+        with hk.intercept_methods(capture_atom_terms):
+            enc = atom_cross_attention.atom_cross_att_encoder(
+                token_atoms_act=None,
+                trunk_single_cond=None,
+                trunk_pair_cond=None,
+                config=embedding_module.config.per_atom_conditioning,
+                global_config=config.global_config,
+                batch=batch,
+                name="evoformer_conditioning",
+            )
         target_feat = jnp.concatenate([target_feat_base, enc.token_act], axis=-1)
         prev = {
             "pair": jnp.zeros(
@@ -93,7 +113,7 @@ def main() -> int:
             msa_row_order=msa_row_order,
             capture_pairformer=True,
         )
-        return target_feat_base, enc, target_feat, embeddings
+        return target_feat_base, atom_terms, enc, target_feat, embeddings
 
     params = model_params.get_model_haiku_params(model_dir=args.model_dir)
     batch = jax.device_put(
@@ -101,7 +121,7 @@ def main() -> int:
         device,
     )
     _, subkey = jax.random.split(jax.random.PRNGKey(args.seed))
-    target_feat_base, enc, target_feat, result = jax.jit(
+    target_feat_base, atom_terms, enc, target_feat, result = jax.jit(
         run_pass.apply, device=device
     )(
         evoformer_params(params),
@@ -111,6 +131,7 @@ def main() -> int:
         jax.device_put(jnp.asarray(tape["msa_row_order"][0]), device),
     )
     arrays = {
+        **{name: np.asarray(value) for name, value in atom_terms.items()},
         "target_feat_base": np.asarray(target_feat_base),
         "target_feat": np.asarray(target_feat),
         "target_feat_atom": np.asarray(enc.token_act),

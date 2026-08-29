@@ -9,6 +9,46 @@
     "weights_sha256"
   ],
   "tensors": {
+    "atom_embed_ref_pos_input": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_embed_ref_pos": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_embed_ref_mask_input": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_embed_ref_mask": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_embed_ref_element_input": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_embed_ref_element": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_embed_ref_charge_input": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_embed_ref_charge": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_embed_ref_atom_name_input": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_embed_ref_atom_name": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
     "target_feat_base": {
       "max_normalized_rmse": 0.001,
       "min_cosine_similarity": 0.999999

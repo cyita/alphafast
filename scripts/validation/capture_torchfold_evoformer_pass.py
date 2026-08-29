@@ -20,6 +20,15 @@ from parity_io import load_npz, sha256_file, write_npz
 from capture_torchfold_parity import to_numpy
 
 
+ATOM_SINGLE_EMBEDDINGS = {
+    "embed_ref_pos": "atom_embed_ref_pos",
+    "embed_ref_mask": "atom_embed_ref_mask",
+    "embed_ref_element": "atom_embed_ref_element",
+    "embed_ref_charge": "atom_embed_ref_charge",
+    "embed_ref_atom_name": "atom_embed_ref_atom_name",
+}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--frozen-features", type=Path, required=True)
@@ -52,16 +61,35 @@ def main() -> int:
     )
     batch_dict["deletion_mean"] = batch_dict["deletion_mean"].float()
     batch = feat_batch.Batch.from_data_dict(batch_dict)
+    atom_terms = {}
+
+    def capture_atom_term(tensor_name):
+        def hook(_module, inputs, output):
+            atom_terms[f"{tensor_name}_input"] = inputs[0].clone()
+            atom_terms[tensor_name] = output.clone()
+
+        return hook
+
+    hooks = [
+        getattr(model.evoformer_conditioning, module_name).register_forward_hook(
+            capture_atom_term(tensor_name)
+        )
+        for module_name, tensor_name in ATOM_SINGLE_EMBEDDINGS.items()
+    ]
     with torch.inference_mode():
-        target_feat_base = featurization.create_target_feat(
-            batch, append_per_atom_features=False
-        )
-        enc = model.evoformer_conditioning(
-            token_atoms_act=None,
-            trunk_single_cond=None,
-            trunk_pair_cond=None,
-            batch=batch,
-        )
+        try:
+            target_feat_base = featurization.create_target_feat(
+                batch, append_per_atom_features=False
+            )
+            enc = model.evoformer_conditioning(
+                token_atoms_act=None,
+                trunk_single_cond=None,
+                trunk_pair_cond=None,
+                batch=batch,
+            )
+        finally:
+            for hook in hooks:
+                hook.remove()
         target_feat = torch.concatenate([target_feat_base, enc.token_act], dim=-1)
         prev = {
             "pair": torch.zeros(
@@ -92,6 +120,7 @@ def main() -> int:
         text=True,
     ).stdout.strip()
     arrays = {
+        **{name: to_numpy(value) for name, value in atom_terms.items()},
         "target_feat_base": to_numpy(target_feat_base),
         "target_feat": to_numpy(target_feat),
         "target_feat_atom": to_numpy(enc.token_act),
