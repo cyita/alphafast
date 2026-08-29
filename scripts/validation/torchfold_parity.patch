@@ -356,7 +356,7 @@ index 69ad7d2..4976fbd 100644
  
          q = self.q_projection(x_q)
          k = self.k_projection(x_k)
-@@ -313,24 +330,41 @@ class CrossAttention(nn.Module):
+@@ -313,23 +330,40 @@ class CrossAttention(nn.Module):
                            (self.num_head, self.key_dim_per_head))
          k = torch.reshape(k, k.shape[:-1] +
                            (self.num_head, self.key_dim_per_head))
