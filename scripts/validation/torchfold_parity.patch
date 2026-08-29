@@ -304,5 +304,98 @@ index 26f9007bb165f6d343c5959fa401fe59a12f449a..f495efd69fa04b6bc8b140d4a4bd8b11
              'contact_probs': contact_probs,
 +            'distogram': logits,
          }
+
+diff --git a/TorchFold_inference/torchfold/torchfold/nn/diffusion_transformer.py b/TorchFold_inference/torchfold/torchfold/nn/diffusion_transformer.py
+index 69ad7d2..4976fbd 100644
+--- a/TorchFold_inference/torchfold/torchfold/nn/diffusion_transformer.py
++++ b/TorchFold_inference/torchfold/torchfold/nn/diffusion_transformer.py
+@@ -32,6 +32,8 @@ class AdaptiveLayerNorm(nn.Module):
+                 self.c_single_cond, self.c_x, bias=False)
+         else:
+             self.layer_norm = fastnn.LayerNorm(self.c_x)
++        self.capture_intermediates = False
++        self.last_intermediates = None
+ 
+     def forward(self,
+                 x: torch.Tensor,
+@@ -44,7 +46,15 @@ class AdaptiveLayerNorm(nn.Module):
+             single_cond = self.single_cond_layer_norm(single_cond)
+             single_scale = self.single_cond_scale(single_cond)
+             single_bias = self.single_cond_bias(single_cond)
+-            return torch.sigmoid(single_scale) * x + single_bias
++            output = torch.sigmoid(single_scale) * x + single_bias
++            if self.capture_intermediates:
++                self.last_intermediates = {
++                    'x_norm': x.clone(),
++                    'single_cond_norm': single_cond.clone(),
++                    'single_scale': single_scale.clone(),
++                    'single_bias': single_bias.clone(),
++                }
++            return output
+         else:
+             return self.layer_norm(x)
+ 
+@@ -277,6 +287,8 @@ class CrossAttention(nn.Module):
+         self.gating_query = nn.Linear(self.key_dim, self.value_dim, bias=False)
+         self.adaptive_zero_init = AdaLNZero(
+             self.value_dim, self.value_dim, self.key_dim, use_single_cond=True)
++        self.capture_intermediates = False
++        self.last_intermediates = None
+ 
+     def forward(
+         self,
+@@ -306,6 +318,11 @@ class CrossAttention(nn.Module):
+ 
+         x_q = self.q_adaptive_layernorm(x_q, single_cond_q)
+         x_k = self.k_adaptive_layernorm(x_k, single_cond_k)
++        if self.capture_intermediates:
++            intermediates = {
++                'q_norm': x_q.clone(),
++                'k_norm': x_k.clone(),
++            }
+ 
+         q = self.q_projection(x_q)
+         k = self.k_projection(x_k)
+@@ -313,24 +330,41 @@ class CrossAttention(nn.Module):
+                           (self.num_head, self.key_dim_per_head))
+         k = torch.reshape(k, k.shape[:-1] +
+                           (self.num_head, self.key_dim_per_head))
++        if self.capture_intermediates:
++            intermediates['q_projection'] = q.clone()
++            intermediates['k_projection'] = k.clone()
+ 
+         logits = torch.einsum('...qhc,...khc->...hqk',
+                               q * self.q_scale, k) + bias
+         if pair_logits is not None:
+             logits += pair_logits
+         weights = torch.softmax(logits, axis=-1)
++        if self.capture_intermediates:
++            intermediates['logits'] = logits.clone()
++            intermediates['weights'] = weights.clone()
+ 
+         v = self.v_projection(x_k)
+         v = torch.reshape(v, v.shape[:-1] +
+                           (self.num_head, self.value_dim_per_head))
++        if self.capture_intermediates:
++            intermediates['v_projection'] = v.clone()
+         weighted_avg = torch.einsum('...hqk,...khc->...qhc', weights, v)
+         weighted_avg = torch.reshape(
+             weighted_avg, weighted_avg.shape[:-2] + (-1,))
++        if self.capture_intermediates:
++            intermediates['weighted_average'] = weighted_avg.clone()
+ 
+         gate_logits = self.gating_query(x_q)
+         weighted_avg *= torch.sigmoid(gate_logits)
+-
+-        return self.adaptive_zero_init(weighted_avg, single_cond_q)
++        if self.capture_intermediates:
++            intermediates['gate_logits'] = gate_logits.clone()
++            intermediates['gated_average'] = weighted_avg.clone()
++
++        output = self.adaptive_zero_init(weighted_avg, single_cond_q)
++        if self.capture_intermediates:
++            intermediates['attention_update'] = output.clone()
++            self.last_intermediates = intermediates
++        return output
  
  
