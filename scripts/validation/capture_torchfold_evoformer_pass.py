@@ -55,6 +55,13 @@ ATOM_ATTENTION_INTERMEDIATES = (
     "attention_update",
 )
 
+ATOM_ADALN_INTERMEDIATES = (
+    "x_norm",
+    "single_cond_norm",
+    "single_scale",
+    "single_bias",
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -135,6 +142,12 @@ def main() -> int:
             block_one_attention = transformer.cross_attention[0]
             block_one_attention.capture_intermediates = True
             block_one_attention.last_intermediates = None
+            q_adaln = block_one_attention.q_adaptive_layernorm
+            k_adaln = block_one_attention.k_adaptive_layernorm
+            q_adaln.capture_intermediates = True
+            k_adaln.capture_intermediates = True
+            q_adaln.last_intermediates = None
+            k_adaln.last_intermediates = None
             attention_updates = []
             transition_updates = []
 
@@ -167,6 +180,8 @@ def main() -> int:
                 for hook in transformer_hooks:
                     hook.remove()
                 block_one_attention.capture_intermediates = False
+                q_adaln.capture_intermediates = False
+                k_adaln.capture_intermediates = False
             atom_transformer_same_input *= queries_mask[..., None]
             block_act = queries_single_cond.clone()
             for block_index, (attention_update, transition_update) in enumerate(
@@ -206,6 +221,14 @@ def main() -> int:
                 atom_transformer_block_acts[
                     f"atom_transformer_block_1_{name}"
                 ] = value
+            for prefix, module, mask in (
+                ("q", q_adaln, queries_mask),
+                ("k", k_adaln, keys_mask),
+            ):
+                for name in ATOM_ADALN_INTERMEDIATES:
+                    atom_transformer_block_acts[
+                        f"atom_transformer_block_1_{prefix}_adaln_{name}"
+                    ] = module.last_intermediates[name] * mask[..., None]
         target_feat = torch.concatenate([target_feat_base, enc.token_act], dim=-1)
         prev = {
             "pair": torch.zeros(

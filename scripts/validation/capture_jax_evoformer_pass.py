@@ -45,6 +45,14 @@ ATOM_PAIR_PROJECTIONS = {
 ATOM_BOUNDARIES = ATOM_SINGLE_EMBEDDINGS | ATOM_PAIR_PROJECTIONS
 
 ATOM_ATTENTION_INTERMEDIATES = (
+    "q_adaln_x_norm",
+    "q_adaln_single_cond_norm",
+    "q_adaln_single_scale",
+    "q_adaln_single_bias",
+    "k_adaln_x_norm",
+    "k_adaln_single_cond_norm",
+    "k_adaln_single_scale",
+    "k_adaln_single_bias",
     "q_norm",
     "k_norm",
     "q_projection",
@@ -205,13 +213,23 @@ def main() -> int:
             np.asarray(transition_acts[block_index]) * atom_mask
         )
     query_terms = {
+        "q_adaln_x_norm",
+        "q_adaln_single_cond_norm",
+        "q_adaln_single_scale",
+        "q_adaln_single_bias",
         "q_norm",
         "weighted_average",
         "gate_logits",
         "gated_average",
         "attention_update",
     }
-    key_terms = {"k_norm"}
+    key_terms = {
+        "k_adaln_x_norm",
+        "k_adaln_single_cond_norm",
+        "k_adaln_single_scale",
+        "k_adaln_single_bias",
+        "k_norm",
+    }
     query_head_terms = {"q_projection"}
     key_head_terms = {"k_projection", "v_projection"}
     pair_mask = query_mask[:, None, :, None] * key_mask[:, None, None, :]

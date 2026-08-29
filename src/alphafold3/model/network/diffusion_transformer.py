@@ -20,7 +20,7 @@ from jax import numpy as jnp
 import tokamax
 
 
-def adaptive_layernorm(x, single_cond, name):
+def adaptive_layernorm(x, single_cond, name, capture_intermediates=False):
   """Adaptive LayerNorm."""
   # Adopted from Scalable Diffusion Models with Transformers
   # https://arxiv.org/abs/2212.09748
@@ -47,7 +47,16 @@ def adaptive_layernorm(x, single_cond, name):
     single_bias = hm.Linear(
         x.shape[-1], initializer='zeros', name=f'{name}single_cond_bias'
     )(single_cond)
+    if capture_intermediates:
+      intermediates = {
+          'x_norm': x,
+          'single_cond_norm': single_cond,
+          'single_scale': single_scale,
+          'single_bias': single_bias,
+      }
     x = jax.nn.sigmoid(single_scale) * x + single_bias
+  if capture_intermediates:
+    return x, intermediates
   return x
 
 
@@ -283,10 +292,36 @@ def cross_attention(
       * (mask_k - 1.0)[..., None, None, :]
   )
 
-  x_q = adaptive_layernorm(x_q, single_cond_q, name=f'{name}q')
-  x_k = adaptive_layernorm(x_k, single_cond_k, name=f'{name}k')
+  q_norm_output = adaptive_layernorm(
+      x_q,
+      single_cond_q,
+      name=f'{name}q',
+      capture_intermediates=capture_intermediates,
+  )
+  k_norm_output = adaptive_layernorm(
+      x_k,
+      single_cond_k,
+      name=f'{name}k',
+      capture_intermediates=capture_intermediates,
+  )
   if capture_intermediates:
-    intermediates = {'q_norm': x_q, 'k_norm': x_k}
+    x_q, q_norm_intermediates = q_norm_output
+    x_k, k_norm_intermediates = k_norm_output
+    intermediates = {
+        'q_norm': x_q,
+        'k_norm': x_k,
+        **{
+            f'q_adaln_{key}': value
+            for key, value in q_norm_intermediates.items()
+        },
+        **{
+            f'k_adaln_{key}': value
+            for key, value in k_norm_intermediates.items()
+        },
+    }
+  else:
+    x_q = q_norm_output
+    x_k = k_norm_output
 
   assert config.key_dim % config.num_head == 0
   assert config.value_dim % config.num_head == 0

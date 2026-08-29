@@ -157,7 +157,39 @@
       "max_normalized_rmse": 0.001,
       "min_cosine_similarity": 0.999999
     },
+    "atom_transformer_block_1_q_adaln_x_norm": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_q_adaln_single_cond_norm": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_q_adaln_single_scale": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_q_adaln_single_bias": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
     "atom_transformer_block_1_k_norm": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_k_adaln_x_norm": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_k_adaln_single_cond_norm": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_k_adaln_single_scale": {
+      "max_normalized_rmse": 0.001,
+      "min_cosine_similarity": 0.999999
+    },
+    "atom_transformer_block_1_k_adaln_single_bias": {
       "max_normalized_rmse": 0.001,
       "min_cosine_similarity": 0.999999
     },
