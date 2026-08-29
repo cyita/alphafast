@@ -50,6 +50,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--weights-file", type=Path, required=True)
     parser.add_argument("--output-file", type=Path, required=True)
     parser.add_argument("--candidate-root", type=Path, required=True)
+    parser.add_argument("--reference-inputs", type=Path)
     parser.add_argument("--device", default="cuda:0")
     return parser.parse_args()
 
@@ -103,6 +104,31 @@ def main() -> int:
         finally:
             for hook in hooks:
                 hook.remove()
+        atom_transformer_same_input = None
+        if args.reference_inputs is not None:
+            reference, _ = load_npz(args.reference_inputs)
+            queries_single_cond = torch.from_numpy(
+                reference["atom_queries_single_cond"]
+            ).to(device)
+            queries_mask = torch.from_numpy(reference["atom_queries_mask"]).to(device)
+            keys_single_cond = torch.from_numpy(
+                reference["atom_keys_single_cond"]
+            ).to(device)
+            keys_mask = torch.from_numpy(reference["atom_keys_mask"]).to(device)
+            pair_cond = torch.from_numpy(reference["atom_pair_cond"]).to(device)
+            transformer = model.evoformer_conditioning.atom_transformer_encoder
+            transformer.first_run = True
+            transformer.pair_logits = None
+            atom_transformer_same_input = transformer(
+                queries_act=queries_single_cond.clone(),
+                queries_mask=queries_mask,
+                queries_to_keys=batch.atom_cross_att.queries_to_keys,
+                keys_mask=keys_mask,
+                queries_single_cond=queries_single_cond,
+                keys_single_cond=keys_single_cond,
+                pair_cond=pair_cond,
+            )
+            atom_transformer_same_input *= queries_mask[..., None]
         target_feat = torch.concatenate([target_feat_base, enc.token_act], dim=-1)
         prev = {
             "pair": torch.zeros(
@@ -138,6 +164,9 @@ def main() -> int:
         "target_feat": to_numpy(target_feat),
         "target_feat_atom": to_numpy(enc.token_act),
         "atom_queries_single_cond": to_numpy(enc.queries_single_cond),
+        "atom_queries_mask": to_numpy(enc.queries_mask),
+        "atom_keys_single_cond": to_numpy(enc.keys_single_cond),
+        "atom_keys_mask": to_numpy(enc.keys_mask),
         "atom_pair_cond": to_numpy(enc.pair_cond),
         "atom_skip_connection": to_numpy(enc.skip_connection),
         "pre_pair": to_numpy(result["pairformer_pre_pair"]),
@@ -147,6 +176,10 @@ def main() -> int:
         "output_pair": to_numpy(result["pair"]),
         "output_single": to_numpy(result["single"]),
     }
+    if atom_transformer_same_input is not None:
+        arrays["atom_transformer_same_input"] = to_numpy(
+            atom_transformer_same_input
+        )
     metadata = {
         "artifact_type": "evoformer_pass_parity",
         "format_version": 1,
