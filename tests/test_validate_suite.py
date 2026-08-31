@@ -11,6 +11,8 @@ import unittest
 
 import numpy as np
 
+from scripts.validation.run_suite import build_command
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VALIDATE_SCRIPT = REPO_ROOT / "scripts" / "validate_torch.sh"
@@ -146,6 +148,7 @@ class ValidateSuiteTest(unittest.TestCase):
                     "stage": "accuracy",
                     "tool": "score_accuracy.py",
                     "output_root": "jax_predictions",
+                    "ground_truth_root": "ground_truth",
                     "profile": "full",
                     "result_file": "jax_accuracy.json",
                 },
@@ -154,6 +157,7 @@ class ValidateSuiteTest(unittest.TestCase):
                     "stage": "accuracy",
                     "tool": "score_accuracy.py",
                     "output_root": "torch_predictions",
+                    "ground_truth_root": "ground_truth",
                     "profile": "full",
                     "result_file": "torch_accuracy.json",
                 },
@@ -253,12 +257,30 @@ class ValidateSuiteTest(unittest.TestCase):
             str(self.root / "score_accuracy.py"),
             "--output-root",
             str(self.root / "fail"),
+            "--ground-truth-root",
+            str(self.root / "ground_truth"),
             "--result-file",
             str(result_path),
         )
 
         self.assertEqual(completed.returncode, 1)
         self.assertEqual(json.loads(result_path.read_text())["status"], "FAIL")
+
+    def test_accuracy_suite_uses_internal_tool_by_default(self) -> None:
+        _, stage, command = build_command(
+            {
+                "name": "accuracy",
+                "stage": "accuracy",
+                "output_root": "predictions",
+                "ground_truth_root": "ground_truth",
+            },
+            self.root,
+            self.root / "result.json",
+        )
+
+        self.assertEqual(stage, "accuracy")
+        self.assertNotIn("--tool", command)
+        self.assertIn("--ground-truth-root", command)
 
     def test_accuracy_delta_fails_on_excessive_regression(self) -> None:
         reference = self.root / "reference_accuracy.json"

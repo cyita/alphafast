@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "name": "nvidia_single_protein_1ubq",
+      "kind": "single_protein",
+      "ground_truth": "1ubq.cif",
+      "accuracy": {
+        "protein_chains": {
+          "A": "A"
+        }
+      }
+    },
+    {
+      "name": "nvidia_protein_complex_1brs",
+      "kind": "protein_complex",
+      "ground_truth": "1brs.cif",
+      "accuracy": {
+        "protein_chains": {
+          "A": "A",
+          "B": "D"
+        },
+        "receptor_chain": "A",
+        "partner_chain": "B"
+      }
+    },
+    {
+      "name": "nvidia_protein_ligand_3hs4",
+      "kind": "protein_ligand",
+      "ground_truth": "3hs4.cif",
+      "accuracy": {
+        "protein_chains": {
+          "A": "A"
+        },
+        "ligand": {
+          "predicted_chain": "B",
+          "reference_chain": "D",
+          "comp_id": "AZM"
+        },
+        "ion": {
+          "predicted_chain": "C",
+          "reference_chain": "B",
+          "comp_id": "ZN"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "description": "Engineering regression thresholds for three fixed cases; not universal scientific quality cutoffs.",
+  "cases": {
+    "nvidia_single_protein_1ubq": {
+      "target_coverage": {"warn_min": 0.99, "fail_min": 0.95},
+      "ca_rmsd": {"warn_max": 1.0, "fail_max": 2.0},
+      "ca_tm_score": {"warn_min": 0.9, "fail_min": 0.8},
+      "ca_lddt": {"warn_min": 0.9, "fail_min": 0.8}
+    },
+    "nvidia_protein_complex_1brs": {
+      "target_coverage": {"warn_min": 0.97, "fail_min": 0.95},
+      "ca_rmsd": {"warn_max": 1.0, "fail_max": 2.0},
+      "partner_ca_rmsd_after_receptor_fit": {"warn_max": 1.0, "fail_max": 2.0},
+      "interface_contact_f1": {"warn_min": 0.9, "fail_min": 0.8}
+    },
+    "nvidia_protein_ligand_3hs4": {
+      "target_coverage": {"warn_min": 0.98, "fail_min": 0.95},
+      "ca_rmsd": {"warn_max": 1.0, "fail_max": 2.0},
+      "ligand_rmsd": {"warn_max": 1.0, "fail_max": 2.0},
+      "ion_distance": {"warn_max": 0.5, "fail_max": 1.0},
+      "pocket_f1": {"warn_min": 0.9, "fail_min": 0.8}
+    }
+  }
+}

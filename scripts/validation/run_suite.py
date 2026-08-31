@@ -15,7 +15,7 @@ REQUIRED_FIELDS = {
     "weight": ("weights_file", "mapping_report"),
     "e2e": ("reference", "candidate", "tolerances"),
     "ranking": ("reference", "candidate"),
-    "accuracy": ("tool", "output_root"),
+    "accuracy": ("output_root", "ground_truth_root"),
     "accuracy_delta": ("reference_report", "candidate_report", "tolerances"),
 }
 PATH_OPTIONS = {

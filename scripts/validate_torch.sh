@@ -27,10 +27,10 @@ Usage:
       [--result-file PATH]
 
   scripts/validate_torch.sh accuracy \
-      --tool PATH \
       --output-root PATH \
+      --ground-truth-root PATH \
+      [--tool PATH] \
       [--profile smoke|full] \
-      [--ground-truth-root PATH] \
       [--thresholds PATH] \
       [--result-file PATH]
 

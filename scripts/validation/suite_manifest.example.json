@@ -17,7 +17,6 @@
     {
       "name": "jax-ground-truth-accuracy",
       "stage": "accuracy",
-      "tool": "../../nvidia_reproduction/score_accuracy.py",
       "output_root": "artifacts/jax_predictions",
       "ground_truth_root": "artifacts/ground_truth",
       "profile": "full",
@@ -26,7 +25,6 @@
     {
       "name": "torch-ground-truth-accuracy",
       "stage": "accuracy",
-      "tool": "../../nvidia_reproduction/score_accuracy.py",
       "output_root": "artifacts/torch_predictions",
       "ground_truth_root": "artifacts/ground_truth",
       "profile": "full",
